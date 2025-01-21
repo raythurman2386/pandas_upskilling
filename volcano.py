@@ -18,7 +18,7 @@ def get_volcano_type_color(volcano_type: str) -> str:
     color_map = {
         "Stratovolcano": "green",
         "Caldera": "blue",
-        "Complex volcano": "yellow",
+        "Complex volcano": "purple",
         "Lava dome": "orange"
     }
     return color_map.get(volcano_type, "red")
