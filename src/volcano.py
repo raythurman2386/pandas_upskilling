@@ -3,6 +3,15 @@ import geopandas as gpd
 import folium
 from folium import plugins
 
+from src.config.logging_config import CURRENT_LOGGING_CONFIG
+from src.utils.logger import setup_logger
+
+logger = setup_logger(
+    "volcano",
+    log_level=CURRENT_LOGGING_CONFIG["log_level"],
+    log_dir=CURRENT_LOGGING_CONFIG["log_dir"],
+)
+
 
 class VolcanoAnalysis:
     def __init__(self, csv_file):
@@ -119,7 +128,7 @@ class VolcanoAnalysis:
             ).add_to(volcano_map)
 
         # Add spatial analysis data
-        spatial_gdf = gpd.read_file("volcano_spatial_analysis.gpkg")
+        spatial_gdf = gpd.read_file("../volcano_spatial_analysis.gpkg")
         folium.GeoJson(
             spatial_gdf,
             name='Spatial Analysis',
@@ -132,7 +141,7 @@ class VolcanoAnalysis:
         ).add_to(volcano_map)
 
         # Add density analysis data
-        density_gdf = gpd.read_file("volcano_density_analysis.gpkg")
+        density_gdf = gpd.read_file("../volcano_density_analysis.gpkg")
         folium.Choropleth(
             geo_data=density_gdf.to_json(),
             name='Density Analysis',
@@ -146,7 +155,7 @@ class VolcanoAnalysis:
         ).add_to(volcano_map)
 
         # Add temporal analysis data
-        temporal_gdf = gpd.read_file("volcano_temporal_analysis.gpkg")
+        temporal_gdf = gpd.read_file("../volcano_temporal_analysis.gpkg")
         temporal_gdf['Year'] = temporal_gdf['Year'].astype(int)
 
         # Create a custom JSON-friendly dictionary
@@ -170,7 +179,7 @@ class VolcanoAnalysis:
 
 
 if __name__ == "__main__":
-    volcano_analysis = VolcanoAnalysis("volcano_data.csv")
+    volcano_analysis = VolcanoAnalysis("../volcano_data.csv")
 
     analysis_functions = {
         1: volcano_analysis.spatial_analysis,

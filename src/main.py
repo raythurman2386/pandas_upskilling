@@ -3,15 +3,24 @@ import pandas as pd
 import geopandas as gpd
 import matplotlib.pyplot as plt
 
+from src.config.logging_config import CURRENT_LOGGING_CONFIG
+from src.utils.logger import setup_logger
+
+logger = setup_logger(
+    "main",
+    log_level=CURRENT_LOGGING_CONFIG["log_level"],
+    log_dir=CURRENT_LOGGING_CONFIG["log_dir"],
+)
+
 
 def read_csv_example():
     """Basic read CSV example"""
     data = pd.read_csv(
         "https://raw.githubusercontent.com/mwaskom/seaborn-data/master/tips.csv"
     )
-    print(data.head())
-    print(f"Shape: {data.shape}")
-    print(f"Columns: {data.columns.tolist()}")
+    logger.info(data.head())
+    logger.info(f"Shape: {data.shape}")
+    logger.info(f"Columns: {data.columns.tolist()}")
 
 
 def group_by_example():
@@ -20,8 +29,8 @@ def group_by_example():
         "https://raw.githubusercontent.com/mwaskom/seaborn-data/master/tips.csv"
     )
     grouped = data.groupby("sex")
-    print(grouped.size())
-    print(grouped["total_bill"].mean())
+    logger.info(grouped.size())
+    logger.info(grouped["total_bill"].mean())
 
 
 def describe_example():
@@ -29,7 +38,7 @@ def describe_example():
     data = pd.read_csv(
         "https://raw.githubusercontent.com/mwaskom/seaborn-data/master/tips.csv"
     )
-    print(data.describe())
+    logger.info(data.describe())
 
 
 def correlation_example():
@@ -37,7 +46,7 @@ def correlation_example():
     data = pd.read_csv(
         "https://raw.githubusercontent.com/mwaskom/seaborn-data/master/tips.csv"
     )
-    print(data.corr())
+    logger.info(data.corr())
 
 
 def load_states_data() -> gpd.GeoDataFrame:

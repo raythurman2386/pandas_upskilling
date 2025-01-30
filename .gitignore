@@ -5,3 +5,16 @@
 /*.egg-info
 /*.egg-link
 /*.sh*
+/*.geopkg
+/*.gpkg
+/*.sqlite
+/*.sql
+/*.geojson
+/*.json
+/*.csv
+/*.dbf
+/*.prj
+/logs/
+/*.log
+/*.txt
+src/logs
