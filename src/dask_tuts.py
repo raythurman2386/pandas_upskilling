@@ -10,8 +10,9 @@ import string
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
+from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
+from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error, confusion_matrix, classification_report, \
+    accuracy_score
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.model_selection import cross_val_score, GridSearchCV
 from sklearn.ensemble import GradientBoostingRegressor
@@ -241,23 +242,21 @@ def expanded_ml_task():
 def perform_nhd_ml_task(file_path: str):
     logger.info("Starting NHD Flowline Machine Learning task")
     nhd_data = gpd.read_file(file_path)
-    features = ['LENGTHKM', 'mainstemid', 'levelpath', 'FCODE', 'FTYPE']
-    target = 'StreamOrder'
+    logger.debug(f"Loaded NHD data with {len(nhd_data)} flowlines")
+    features = ['lengthkm', 'mainstemid']
+    target = 'edhfcode'
 
-    if target not in nhd_data.columns:
-        logger.error(f"{target} not found in the dataset")
-        return
-
+    logger.info(f"Preparing features: {features} and target: {target}")
     X = nhd_data[features]
     y = nhd_data[target]
-    y = y.fillna(y.median())
 
-    # Split data
+    logger.info("Splitting data into train and test sets")
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    logger.info(f"Train set size: {len(X_train)}, Test set size: {len(X_test)}")
 
-    # Create preprocessing steps
-    numeric_features = ['LENGTHKM', 'levelpath']
-    categorical_features = ['FCODE', 'FTYPE']
+    logger.info("Setting up preprocessing pipeline")
+    numeric_features = ['lengthkm']
+    categorical_features = ['mainstemid']
 
     numeric_transformer = Pipeline(steps=[
         ('imputer', SimpleImputer(strategy='median')),
@@ -277,40 +276,29 @@ def perform_nhd_ml_task(file_path: str):
 
     pipeline = Pipeline([
         ('preprocessor', preprocessor),
-        ('rf', RandomForestRegressor(random_state=42))
+        ('rf', RandomForestClassifier(random_state=42))
     ])
 
-    # Hyperparameter tuning
+    logger.info("Starting hyperparameter tuning")
     param_grid = {
         'rf__n_estimators': [100, 200, 300],
         'rf__max_depth': [None, 10, 20, 30]
     }
-    grid_search = GridSearchCV(pipeline, param_grid, cv=5, scoring='neg_mean_squared_error')
+    grid_search = GridSearchCV(pipeline, param_grid, cv=5, scoring='accuracy')
+
+    logger.info("Fitting the model (this may take a while)")
     grid_search.fit(X_train, y_train)
 
     logger.info(f"Best parameters: {grid_search.best_params_}")
 
     y_pred = grid_search.predict(X_test)
-    y_pred_rounded = np.round(y_pred)
 
     # Evaluate the model
-    mse = mean_squared_error(y_test, y_pred_rounded)
-    mae = mean_absolute_error(y_test, y_pred_rounded)
-    r2 = r2_score(y_test, y_pred_rounded)
-
+    accuracy = accuracy_score(y_test, y_pred)
     logger.info("***Model Performance:***")
-    logger.info(f"Mean Squared Error: {mse}")
-    logger.info(f"Mean Absolute Error: {mae}")
-    logger.info(f"R-squared Score: {r2}")
-
-    exact_match_ratio = np.mean(y_test == y_pred_rounded)
-    logger.info(f"Exact Match Ratio: {exact_match_ratio}")
-
-    error_distribution = y_test - y_pred_rounded
-    logger.info("Error Distribution:")
-    logger.info(f"  Mean error: {np.mean(error_distribution):.2f}")
-    logger.info(f"  Median error: {np.median(error_distribution):.2f}")
-    logger.info(f"  Std dev of error: {np.std(error_distribution):.2f}")
+    logger.info(f"Accuracy Score: {accuracy}")
+    logger.info("\nClassification Report:")
+    logger.info(classification_report(y_test, y_pred))
 
     # Feature Importance
     feature_importance = grid_search.best_estimator_.named_steps['rf'].feature_importances_
@@ -318,20 +306,32 @@ def perform_nhd_ml_task(file_path: str):
                      grid_search.best_estimator_.named_steps['preprocessor']
                      .named_transformers_['cat']
                      .named_steps['onehot']
-                     .get_feature_names(categorical_features).tolist())
+                     .get_feature_names_out(categorical_features).tolist())
 
     for name, importance in zip(feature_names, feature_importance):
         logger.info(f"Feature {name} importance: {importance}")
 
-    # Visualization
-    plt.figure(figsize=(10, 6))
-    sns.scatterplot(x=y_test, y=y_pred)
-    plt.xlabel('Actual Values')
-    plt.ylabel('Predicted Values')
-    plt.title('Actual vs Predicted Values')
-    plt.savefig('nhd_actual_vs_predicted.png')
-    logger.info("Saved actual vs predicted plot")
+    # Confusion Matrix
+    cm = confusion_matrix(y_test, y_pred)
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues')
+    plt.title('Confusion Matrix of EDHFCODE Predictions')
+    plt.xlabel('Predicted')
+    plt.ylabel('Actual')
+    plt.savefig('edhfcode_confusion_matrix.png')
+    plt.close()
 
+    # Feature Importance Plot
+    plt.figure(figsize=(12, 6))
+    sns.barplot(x=feature_importance, y=feature_names)
+    plt.title('Feature Importance for EDHFCODE Prediction')
+    plt.xlabel('Importance')
+    plt.ylabel('Features')
+    plt.tight_layout()
+    plt.savefig('edhfcode_feature_importance.png')
+    plt.close()
+
+    logger.info("Saved EDHFCODE prediction visualizations")
     logger.info("NHD Flowline Machine Learning task completed")
 
 
@@ -343,5 +343,6 @@ if __name__ == "__main__":
     combined_dask_and_dfs()
     perform_ml_task()
     expanded_ml_task()
+    perform_nhd_ml_task("nhd_flowline.shp")
 
     logger.info("All operations completed successfully")
