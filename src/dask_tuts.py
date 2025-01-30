@@ -1,10 +1,23 @@
 import dask.dataframe as dd
 import numpy as np
 import pandas as pd
+import geopandas as gpd
 from dask.diagnostics import ProgressBar
 from datetime import datetime, timedelta
 import random
 import string
+
+from sklearn.compose import ColumnTransformer
+from sklearn.impute import SimpleImputer
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.model_selection import cross_val_score, GridSearchCV
+from sklearn.ensemble import GradientBoostingRegressor
+from sklearn.pipeline import Pipeline
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 from src.config.logging_config import CURRENT_LOGGING_CONFIG
 from src.utils.logger import setup_logger
@@ -103,10 +116,232 @@ def perform_graph_operations():
     logger.info("Graph operations completed")
 
 
+def combined_dask_and_dfs():
+    logger.info("Starting combined Dask and DFS operations")
+    logger.info("Creating a large DataFrame with datetime index")
+    start_date = datetime(2025, 1, 30)
+    dates = [start_date + timedelta(minutes=i) for i in range(1000000)]
+    df = pd.DataFrame({
+        'timestamp': dates,
+        'id': range(1000000),
+        'value': np.random.randn(1000000),
+        'category': np.random.choice(['A', 'B', 'C'], 1000000)
+    })
+    df.set_index('timestamp', inplace=True)
+    ddf = dd.from_pandas(df, npartitions=4)
+
+    # Use Dask to calculate mean value
+    with ProgressBar():
+        mean_value = ddf['value'].mean().compute()
+    logger.info(f"Mean value from Dask: {mean_value}")
+
+    graph = generate_large_graph(50, 5)
+    start_node = "A"
+    dfs_result = dfs_iterative(graph, start_node)
+
+    # Use Dask to filter data based on DFS result
+    with ProgressBar():
+        filtered_data = ddf[ddf['category'].isin(dfs_result[:10])].compute()
+
+    logger.info(f"Filtered data based on DFS (first 5 rows):\n{filtered_data.head()}")
+    logger.info("Combined Dask and DFS operations completed")
+
+
+def perform_ml_task():
+    logger.info("Starting Machine Learning task")
+
+    # Generate some example flowline data
+    np.random.seed(42)
+    n_samples = 10000
+    X = np.random.rand(n_samples, 3)  # 3 features for testing
+    y = 2 * X[:, 0] + 0.5 * X[:, 1] - 1.5 * X[:, 2] + np.random.normal(0, 0.1, n_samples)  # Target: efficiency
+
+    # Split the data
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+    # Train a Random Forest model
+    model = RandomForestRegressor(n_estimators=100, random_state=42)
+    model.fit(X_train, y_train)
+
+    # Make predictions
+    y_pred = model.predict(X_test)
+
+    # Evaluate the model
+    mse = mean_squared_error(y_test, y_pred)
+    r2 = r2_score(y_test, y_pred)
+
+    logger.info("***Model Performance:***")
+    logger.info(f"Mean Squared Error: {mse}")
+    logger.info(f"R-squared Score: {r2}")
+
+    # Feature importance
+    feature_importance = model.feature_importances_
+    for i, importance in enumerate(feature_importance):
+        logger.info(f"Feature {i+1} importance: {importance}")
+
+    logger.info("Machine Learning task completed")
+
+
+def expanded_ml_task():
+    logger.info("Starting Expanded Machine Learning task")
+    np.random.seed(42)
+    n_samples = 10000
+    X = np.random.rand(n_samples, 3)
+    y = 2 * X[:, 0] + 0.5 * X[:, 1] - 1.5 * X[:, 2] + np.random.normal(0, 0.1, n_samples)
+
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+    pipeline = Pipeline([
+        ('scaler', StandardScaler()),
+        ('rf', RandomForestRegressor(random_state=42))
+    ])
+
+    # Hyperparameter tuning
+    param_grid = {
+        'rf__n_estimators': [50, 100, 200],
+        'rf__max_depth': [None, 10, 20]
+    }
+    grid_search = GridSearchCV(pipeline, param_grid, cv=5, scoring='neg_mean_squared_error')
+    grid_search.fit(X_train, y_train)
+
+    logger.info(f"Best parameters: {grid_search.best_params_}")
+
+    y_pred = grid_search.predict(X_test)
+
+    # Evaluate the model
+    mse = mean_squared_error(y_test, y_pred)
+    r2 = r2_score(y_test, y_pred)
+
+    logger.info("***Model Performance:***")
+    logger.info(f"Mean Squared Error: {mse}")
+    logger.info(f"R-squared Score: {r2}")
+
+    # Feature Importance
+    feature_importance = grid_search.best_estimator_.named_steps['rf'].feature_importances_
+    for i, importance in enumerate(feature_importance):
+        logger.info(f"Feature {i+1} importance: {importance}")
+
+    # Visualization
+    plt.figure(figsize=(10, 6))
+    sns.scatterplot(x=y_test, y=y_pred)
+    plt.xlabel('Actual Values')
+    plt.ylabel('Predicted Values')
+    plt.title('Actual vs Predicted Values')
+    plt.savefig('actual_vs_predicted.png')
+    logger.info("Saved actual vs predicted plot")
+
+    # Compare with another model
+    gb_model = GradientBoostingRegressor(random_state=42)
+    gb_scores = cross_val_score(gb_model, X, y, cv=5, scoring='neg_mean_squared_error')
+    logger.info(f"Gradient Boosting CV MSE: {-gb_scores.mean()}")
+
+    logger.info("Expanded Machine Learning task completed")
+
+
+def perform_nhd_ml_task(file_path: str):
+    logger.info("Starting NHD Flowline Machine Learning task")
+    nhd_data = gpd.read_file(file_path)
+    features = ['LENGTHKM', 'mainstemid', 'levelpath', 'FCODE', 'FTYPE']
+    target = 'StreamOrder'
+
+    if target not in nhd_data.columns:
+        logger.error(f"{target} not found in the dataset")
+        return
+
+    X = nhd_data[features]
+    y = nhd_data[target]
+    y = y.fillna(y.median())
+
+    # Split data
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+    # Create preprocessing steps
+    numeric_features = ['LENGTHKM', 'levelpath']
+    categorical_features = ['FCODE', 'FTYPE']
+
+    numeric_transformer = Pipeline(steps=[
+        ('imputer', SimpleImputer(strategy='median')),
+        ('scaler', StandardScaler())
+    ])
+
+    categorical_transformer = Pipeline(steps=[
+        ('imputer', SimpleImputer(strategy='constant', fill_value='missing')),
+        ('onehot', OneHotEncoder(handle_unknown='ignore'))
+    ])
+
+    preprocessor = ColumnTransformer(
+        transformers=[
+            ('num', numeric_transformer, numeric_features),
+            ('cat', categorical_transformer, categorical_features)
+        ])
+
+    pipeline = Pipeline([
+        ('preprocessor', preprocessor),
+        ('rf', RandomForestRegressor(random_state=42))
+    ])
+
+    # Hyperparameter tuning
+    param_grid = {
+        'rf__n_estimators': [100, 200, 300],
+        'rf__max_depth': [None, 10, 20, 30]
+    }
+    grid_search = GridSearchCV(pipeline, param_grid, cv=5, scoring='neg_mean_squared_error')
+    grid_search.fit(X_train, y_train)
+
+    logger.info(f"Best parameters: {grid_search.best_params_}")
+
+    y_pred = grid_search.predict(X_test)
+    y_pred_rounded = np.round(y_pred)
+
+    # Evaluate the model
+    mse = mean_squared_error(y_test, y_pred_rounded)
+    mae = mean_absolute_error(y_test, y_pred_rounded)
+    r2 = r2_score(y_test, y_pred_rounded)
+
+    logger.info("***Model Performance:***")
+    logger.info(f"Mean Squared Error: {mse}")
+    logger.info(f"Mean Absolute Error: {mae}")
+    logger.info(f"R-squared Score: {r2}")
+
+    exact_match_ratio = np.mean(y_test == y_pred_rounded)
+    logger.info(f"Exact Match Ratio: {exact_match_ratio}")
+
+    error_distribution = y_test - y_pred_rounded
+    logger.info("Error Distribution:")
+    logger.info(f"  Mean error: {np.mean(error_distribution):.2f}")
+    logger.info(f"  Median error: {np.median(error_distribution):.2f}")
+    logger.info(f"  Std dev of error: {np.std(error_distribution):.2f}")
+
+    # Feature Importance
+    feature_importance = grid_search.best_estimator_.named_steps['rf'].feature_importances_
+    feature_names = (numeric_features +
+                     grid_search.best_estimator_.named_steps['preprocessor']
+                     .named_transformers_['cat']
+                     .named_steps['onehot']
+                     .get_feature_names(categorical_features).tolist())
+
+    for name, importance in zip(feature_names, feature_importance):
+        logger.info(f"Feature {name} importance: {importance}")
+
+    # Visualization
+    plt.figure(figsize=(10, 6))
+    sns.scatterplot(x=y_test, y=y_pred)
+    plt.xlabel('Actual Values')
+    plt.ylabel('Predicted Values')
+    plt.title('Actual vs Predicted Values')
+    plt.savefig('nhd_actual_vs_predicted.png')
+    logger.info("Saved actual vs predicted plot")
+
+    logger.info("NHD Flowline Machine Learning task completed")
+
+
 if __name__ == "__main__":
-    logger.info("Starting combined Dask and Graph operations")
+    logger.info("Starting all operations")
 
     perform_dask_operations()
     perform_graph_operations()
+    combined_dask_and_dfs()
+    perform_ml_task()
+    expanded_ml_task()
 
     logger.info("All operations completed successfully")
