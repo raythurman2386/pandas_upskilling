@@ -5,6 +5,8 @@ from logging.handlers import RotatingFileHandler
 import json
 from datetime import datetime
 
+from src.config.logging_config import CURRENT_LOGGING_CONFIG
+
 
 class CustomFormatter(logging.Formatter):
     """Custom formatter with colors for console output"""
@@ -53,7 +55,7 @@ class JSONFormatter(logging.Formatter):
         return json.dumps(log_record)
 
 
-def setup_logger(name: str, log_level: str = "INFO", log_dir: Path = None) -> logging.Logger:
+def setup_logger(name: str, log_level: str = CURRENT_LOGGING_CONFIG["log_level"], log_dir: Path = CURRENT_LOGGING_CONFIG["log_dir"]) -> logging.Logger:
     """
     Set up a logger with both console and file handlers
 
