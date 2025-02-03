@@ -74,23 +74,22 @@ def states_area_analysis():
     fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(20, 15))
 
     # Area choropleth
-    data.plot(column='area', ax=ax1, legend=True,
-              legend_kwds={'label': 'Area'})
-    ax1.set_title('State Areas')
+    data.plot(column="area", ax=ax1, legend=True, legend_kwds={"label": "Area"})
+    ax1.set_title("State Areas")
 
     # Top 10 largest states
-    top_10 = data.nlargest(10, 'area')
-    top_10.plot(ax=ax2, color='red', alpha=0.5)
-    ax2.set_title('10 Largest States/Provinces')
+    top_10 = data.nlargest(10, "area")
+    top_10.plot(ax=ax2, color="red", alpha=0.5)
+    ax2.set_title("10 Largest States/Provinces")
 
     # Area distribution histogram
-    data['area'].hist(ax=ax3, bins=30)
-    ax3.set_title('Distribution of State Areas')
+    data["area"].hist(ax=ax3, bins=30)
+    ax3.set_title("Distribution of State Areas")
 
     # Bar plot of top 10 areas
-    top_10.plot(column='area', kind='bar', ax=ax4)
-    ax4.set_title('Top 10 States by Area')
-    ax4.tick_params(axis='x', rotation=45)
+    top_10.plot(column="area", kind="bar", ax=ax4)
+    ax4.set_title("Top 10 States by Area")
+    ax4.tick_params(axis="x", rotation=45)
 
     plt.tight_layout()
     plt.show()
@@ -100,18 +99,18 @@ def states_spatial_analysis():
     """Spatial analysis of states"""
     data = load_states_data()
     # Calculate centroids and create new visualization
-    data['centroid'] = data.geometry.centroid
+    data["centroid"] = data.geometry.centroid
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 10))
 
     # Plot states with centroids
-    data.plot(ax=ax1, color='lightgrey', edgecolor='black')
-    data.centroid.plot(ax=ax1, color='red', markersize=50, alpha=0.5)
-    ax1.set_title('States with Centroids')
+    data.plot(ax=ax1, color="lightgrey", edgecolor="black")
+    data.centroid.plot(ax=ax1, color="red", markersize=50, alpha=0.5)
+    ax1.set_title("States with Centroids")
 
     # Calculate and plot state boundaries
     boundaries = data.boundary
-    boundaries.plot(ax=ax2, color='blue')
-    ax2.set_title('State Boundaries')
+    boundaries.plot(ax=ax2, color="blue")
+    ax2.set_title("State Boundaries")
 
     plt.show()
 
@@ -119,27 +118,36 @@ def states_spatial_analysis():
 def states_comprehensive():
     """Comprehensive analysis of states data"""
     data = load_states_data()
-    data['perimeter'] = data.geometry.length
-    data['compactness'] = 4 * np.pi * data['area'] / (data['perimeter'] ** 2)
+    data["perimeter"] = data.geometry.length
+    data["compactness"] = 4 * np.pi * data["area"] / (data["perimeter"] ** 2)
 
     fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(20, 15))
-    data.plot(column='compactness', ax=ax1, legend=True,
-              legend_kwds={'label': 'Compactness Ratio'})
-    ax1.set_title('State Compactness')
+    data.plot(
+        column="compactness",
+        ax=ax1,
+        legend=True,
+        legend_kwds={"label": "Compactness Ratio"},
+    )
+    ax1.set_title("State Compactness")
 
     # Area vs Perimeter scatter
-    data.plot(kind='scatter', x='area', y='perimeter', ax=ax2)
-    ax2.set_title('Area vs Perimeter')
+    data.plot(kind="scatter", x="area", y="perimeter", ax=ax2)
+    ax2.set_title("Area vs Perimeter")
 
     # Compactness distribution
-    data['compactness'].hist(ax=ax3, bins=30)
-    ax3.set_title('Distribution of Compactness Ratios')
+    data["compactness"].hist(ax=ax3, bins=30)
+    ax3.set_title("Distribution of Compactness Ratios")
 
     # Custom visualization
-    data.plot(ax=ax4, column='area', cmap='viridis',
-              legend=True, legend_kwds={'label': 'Area'})
-    data.centroid.plot(ax=ax4, color='red', markersize=data['compactness']*100)
-    ax4.set_title('States with Scaled Centroids')
+    data.plot(
+        ax=ax4,
+        column="area",
+        cmap="viridis",
+        legend=True,
+        legend_kwds={"label": "Area"},
+    )
+    data.centroid.plot(ax=ax4, color="red", markersize=data["compactness"] * 100)
+    ax4.set_title("States with Scaled Centroids")
 
     plt.tight_layout()
     plt.show()
@@ -154,7 +162,7 @@ if __name__ == "__main__":
         5: states_basic_analysis,
         6: states_area_analysis,
         7: states_spatial_analysis,
-        8: states_comprehensive
+        8: states_comprehensive,
     }
 
     while True:
