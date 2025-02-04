@@ -13,6 +13,94 @@ logger = setup_logger(__name__)
 
 
 class FakeGeospatialDataGenerator:
+    _boundary_cache = {}
+    _graph_cache = {}
+    _region_queries = {
+        # West Coast
+        "seattle": {"city": "Seattle", "state": "Washington", "country": "USA"},
+        "portland": {"city": "Portland", "state": "Oregon", "country": "USA"},
+        "san_francisco": {"city": "San Francisco", "state": "California", "country": "USA"},
+        "los_angeles": {"city": "Los Angeles", "state": "California", "country": "USA"},
+
+        # Mountain States
+        "denver": {"city": "Denver", "state": "Colorado", "country": "USA"},
+        "salt_lake_city": {"city": "Salt Lake City", "state": "Utah", "country": "USA"},
+        "phoenix": {"city": "Phoenix", "state": "Arizona", "country": "USA"},
+        "las_vegas": {"city": "Las Vegas", "state": "Nevada", "country": "USA"},
+        "boise": {"city": "Boise", "state": "Idaho", "country": "USA"},
+        "helena": {"city": "Helena", "state": "Montana", "country": "USA"},
+        "santa_fe": {"city": "Santa Fe", "state": "New Mexico", "country": "USA"},
+        "cheyenne": {"city": "Cheyenne", "state": "Wyoming", "country": "USA"},
+
+        # Midwest
+        "chicago": {"city": "Chicago", "state": "Illinois", "country": "USA"},
+        "detroit": {"city": "Detroit", "state": "Michigan", "country": "USA"},
+        "minneapolis": {"city": "Minneapolis", "state": "Minnesota", "country": "USA"},
+        "milwaukee": {"city": "Milwaukee", "state": "Wisconsin", "country": "USA"},
+        "indianapolis": {"city": "Indianapolis", "state": "Indiana", "country": "USA"},
+        "columbus": {"city": "Columbus", "state": "Ohio", "country": "USA"},
+        "kansas_city": {"city": "Kansas City", "state": "Missouri", "country": "USA"},
+        "omaha": {"city": "Omaha", "state": "Nebraska", "country": "USA"},
+        "des_moines": {"city": "Des Moines", "state": "Iowa", "country": "USA"},
+        "sioux_falls": {"city": "Sioux Falls", "state": "South Dakota", "country": "USA"},
+        "bismarck": {"city": "Bismarck", "state": "North Dakota", "country": "USA"},
+
+        # Northeast
+        "new_york": {"city": "New York City", "state": "New York", "country": "USA"},
+        "boston": {"city": "Boston", "state": "Massachusetts", "country": "USA"},
+        "philadelphia": {"city": "Philadelphia", "state": "Pennsylvania", "country": "USA"},
+        "providence": {"city": "Providence", "state": "Rhode Island", "country": "USA"},
+        "hartford": {"city": "Hartford", "state": "Connecticut", "country": "USA"},
+        "portland_me": {"city": "Portland", "state": "Maine", "country": "USA"},
+        "manchester": {"city": "Manchester", "state": "New Hampshire", "country": "USA"},
+        "burlington": {"city": "Burlington", "state": "Vermont", "country": "USA"},
+        "baltimore": {"city": "Baltimore", "state": "Maryland", "country": "USA"},
+        "newark": {"city": "Newark", "state": "New Jersey", "country": "USA"},
+        "wilmington": {"city": "Wilmington", "state": "Delaware", "country": "USA"},
+
+        # South
+        "miami": {"city": "Miami", "state": "Florida", "country": "USA"},
+        "atlanta": {"city": "Atlanta", "state": "Georgia", "country": "USA"},
+        "nashville": {"city": "Nashville", "state": "Tennessee", "country": "USA"},
+        "charlotte": {"city": "Charlotte", "state": "North Carolina", "country": "USA"},
+        "virginia_beach": {"city": "Virginia Beach", "state": "Virginia", "country": "USA"},
+        "charleston": {"city": "Charleston", "state": "South Carolina", "country": "USA"},
+        "new_orleans": {"city": "New Orleans", "state": "Louisiana", "country": "USA"},
+        "houston": {"city": "Houston", "state": "Texas", "country": "USA"},
+        "birmingham": {"city": "Birmingham", "state": "Alabama", "country": "USA"},
+        "jackson": {"city": "Jackson", "state": "Mississippi", "country": "USA"},
+        "little_rock": {"city": "Little Rock", "state": "Arkansas", "country": "USA"},
+        "louisville": {"city": "Louisville", "state": "Kentucky", "country": "USA"},
+        "oklahoma_city": {"city": "Oklahoma City", "state": "Oklahoma", "country": "USA"},
+        "charleston_wv": {"city": "Charleston", "state": "West Virginia", "country": "USA"},
+
+        # Non-Contiguous States
+        "anchorage": {"city": "Anchorage", "state": "Alaska", "country": "USA"},
+        "honolulu": {"city": "Honolulu", "state": "Hawaii", "country": "USA"},
+
+        # Additional Major Cities
+        "san_diego": {"city": "San Diego", "state": "California", "country": "USA"},
+        "dallas": {"city": "Dallas", "state": "Texas", "country": "USA"},
+        "san_antonio": {"city": "San Antonio", "state": "Texas", "country": "USA"},
+        "austin": {"city": "Austin", "state": "Texas", "country": "USA"},
+        "memphis": {"city": "Memphis", "state": "Tennessee", "country": "USA"},
+        "st_louis": {"city": "St. Louis", "state": "Missouri", "country": "USA"},
+        "pittsburgh": {"city": "Pittsburgh", "state": "Pennsylvania", "country": "USA"},
+        "cincinnati": {"city": "Cincinnati", "state": "Ohio", "country": "USA"},
+        "cleveland": {"city": "Cleveland", "state": "Ohio", "country": "USA"},
+        "tampa": {"city": "Tampa", "state": "Florida", "country": "USA"},
+        "orlando": {"city": "Orlando", "state": "Florida", "country": "USA"},
+        "sacramento": {"city": "Sacramento", "state": "California", "country": "USA"},
+        "portland_or": {"city": "Portland", "state": "Oregon", "country": "USA"},
+        "albuquerque": {"city": "Albuquerque", "state": "New Mexico", "country": "USA"},
+        "tucson": {"city": "Tucson", "state": "Arizona", "country": "USA"},
+        "fresno": {"city": "Fresno", "state": "California", "country": "USA"},
+        "raleigh": {"city": "Raleigh", "state": "North Carolina", "country": "USA"},
+        "buffalo": {"city": "Buffalo", "state": "New York", "country": "USA"},
+        "richmond": {"city": "Richmond", "state": "Virginia", "country": "USA"},
+        "grand_rapids": {"city": "Grand Rapids", "state": "Michigan", "country": "USA"}
+    }
+
     def __init__(self, data_type="points", region="seattle", num_points=1000):
         self.data_type = data_type
         self.region = region
@@ -23,120 +111,58 @@ class FakeGeospatialDataGenerator:
         self.graph = None
         self.street_network = None
 
-        # Load or create boundary
-        self.load_boundary()
-        self.plot_boundary()
-        # Ensure boundary has correct CRS
-        if self.boundary is not None:
-            self.boundary = self._ensure_crs(self.boundary)
+        # Load cached data or create new
+        try:
+            self._load_cached_data()
+            if self.boundary is not None:
+                self.plot_boundary()
+        except Exception as e:
+            logger.error(f"Error during initialization: {str(e)}")
+
+    def _load_cached_data(self):
+        """Load data from cache or create new"""
+        try:
+            # Check if region data is in cache
+            if self.region in self._boundary_cache:
+                logger.info(f"Loading boundary for {self.region} from cache")
+                self.boundary = self._boundary_cache[self.region]
+                self.graph = self._graph_cache.get(self.region)
+            else:
+                # Load new data and cache it
+                logger.info(f"Loading new data for {self.region}")
+                success = self.load_boundary()  # Check if loading was successful
+                if success and self.boundary is not None:
+                    self._boundary_cache[self.region] = self.boundary
+                    if self.graph is not None:
+                        self._graph_cache[self.region] = self.graph
+
+            # Ensure CRS is correct
+            if self.boundary is not None:
+                self.boundary = self._ensure_crs(self.boundary)
+            else:
+                raise ValueError(f"Failed to load boundary for {self.region}")
+
+        except Exception as e:
+            logger.error(f"Error loading cached data: {str(e)}")
+            self.load_boundary()
 
     def load_boundary(self):
         """Load boundary data from OpenStreetMap"""
         try:
-            # Dictionary of preset regions with their query parameters
-            region_queries = {
-                # West Coast
-                "seattle": {"city": "Seattle", "state": "Washington", "country": "USA"},
-                "portland": {"city": "Portland", "state": "Oregon", "country": "USA"},
-                "san_francisco": {"city": "San Francisco", "state": "California", "country": "USA"},
-                "los_angeles": {"city": "Los Angeles", "state": "California", "country": "USA"},
-
-                # Mountain States
-                "denver": {"city": "Denver", "state": "Colorado", "country": "USA"},
-                "salt_lake_city": {"city": "Salt Lake City", "state": "Utah", "country": "USA"},
-                "phoenix": {"city": "Phoenix", "state": "Arizona", "country": "USA"},
-                "las_vegas": {"city": "Las Vegas", "state": "Nevada", "country": "USA"},
-                "boise": {"city": "Boise", "state": "Idaho", "country": "USA"},
-                "helena": {"city": "Helena", "state": "Montana", "country": "USA"},
-                "santa_fe": {"city": "Santa Fe", "state": "New Mexico", "country": "USA"},
-                "cheyenne": {"city": "Cheyenne", "state": "Wyoming", "country": "USA"},
-
-                # Midwest
-                "chicago": {"city": "Chicago", "state": "Illinois", "country": "USA"},
-                "detroit": {"city": "Detroit", "state": "Michigan", "country": "USA"},
-                "minneapolis": {"city": "Minneapolis", "state": "Minnesota", "country": "USA"},
-                "milwaukee": {"city": "Milwaukee", "state": "Wisconsin", "country": "USA"},
-                "indianapolis": {"city": "Indianapolis", "state": "Indiana", "country": "USA"},
-                "columbus": {"city": "Columbus", "state": "Ohio", "country": "USA"},
-                "kansas_city": {"city": "Kansas City", "state": "Missouri", "country": "USA"},
-                "omaha": {"city": "Omaha", "state": "Nebraska", "country": "USA"},
-                "des_moines": {"city": "Des Moines", "state": "Iowa", "country": "USA"},
-                "sioux_falls": {"city": "Sioux Falls", "state": "South Dakota", "country": "USA"},
-                "bismarck": {"city": "Bismarck", "state": "North Dakota", "country": "USA"},
-
-                # Northeast
-                "new_york": {"city": "New York City", "state": "New York", "country": "USA"},
-                "boston": {"city": "Boston", "state": "Massachusetts", "country": "USA"},
-                "philadelphia": {"city": "Philadelphia", "state": "Pennsylvania", "country": "USA"},
-                "providence": {"city": "Providence", "state": "Rhode Island", "country": "USA"},
-                "hartford": {"city": "Hartford", "state": "Connecticut", "country": "USA"},
-                "portland_me": {"city": "Portland", "state": "Maine", "country": "USA"},
-                "manchester": {"city": "Manchester", "state": "New Hampshire", "country": "USA"},
-                "burlington": {"city": "Burlington", "state": "Vermont", "country": "USA"},
-                "baltimore": {"city": "Baltimore", "state": "Maryland", "country": "USA"},
-                "newark": {"city": "Newark", "state": "New Jersey", "country": "USA"},
-                "wilmington": {"city": "Wilmington", "state": "Delaware", "country": "USA"},
-
-                # South
-                "miami": {"city": "Miami", "state": "Florida", "country": "USA"},
-                "atlanta": {"city": "Atlanta", "state": "Georgia", "country": "USA"},
-                "nashville": {"city": "Nashville", "state": "Tennessee", "country": "USA"},
-                "charlotte": {"city": "Charlotte", "state": "North Carolina", "country": "USA"},
-                "virginia_beach": {"city": "Virginia Beach", "state": "Virginia", "country": "USA"},
-                "charleston": {"city": "Charleston", "state": "South Carolina", "country": "USA"},
-                "new_orleans": {"city": "New Orleans", "state": "Louisiana", "country": "USA"},
-                "houston": {"city": "Houston", "state": "Texas", "country": "USA"},
-                "birmingham": {"city": "Birmingham", "state": "Alabama", "country": "USA"},
-                "jackson": {"city": "Jackson", "state": "Mississippi", "country": "USA"},
-                "little_rock": {"city": "Little Rock", "state": "Arkansas", "country": "USA"},
-                "louisville": {"city": "Louisville", "state": "Kentucky", "country": "USA"},
-                "oklahoma_city": {"city": "Oklahoma City", "state": "Oklahoma", "country": "USA"},
-                "charleston_wv": {"city": "Charleston", "state": "West Virginia", "country": "USA"},
-
-                # Non-Contiguous States
-                "anchorage": {"city": "Anchorage", "state": "Alaska", "country": "USA"},
-                "honolulu": {"city": "Honolulu", "state": "Hawaii", "country": "USA"},
-
-                # Additional Major Cities
-                "san_diego": {"city": "San Diego", "state": "California", "country": "USA"},
-                "dallas": {"city": "Dallas", "state": "Texas", "country": "USA"},
-                "san_antonio": {"city": "San Antonio", "state": "Texas", "country": "USA"},
-                "austin": {"city": "Austin", "state": "Texas", "country": "USA"},
-                "memphis": {"city": "Memphis", "state": "Tennessee", "country": "USA"},
-                "st_louis": {"city": "St. Louis", "state": "Missouri", "country": "USA"},
-                "pittsburgh": {"city": "Pittsburgh", "state": "Pennsylvania", "country": "USA"},
-                "cincinnati": {"city": "Cincinnati", "state": "Ohio", "country": "USA"},
-                "cleveland": {"city": "Cleveland", "state": "Ohio", "country": "USA"},
-                "tampa": {"city": "Tampa", "state": "Florida", "country": "USA"},
-                "orlando": {"city": "Orlando", "state": "Florida", "country": "USA"},
-                "sacramento": {"city": "Sacramento", "state": "California", "country": "USA"},
-                "portland_or": {"city": "Portland", "state": "Oregon", "country": "USA"},
-                "albuquerque": {"city": "Albuquerque", "state": "New Mexico", "country": "USA"},
-                "tucson": {"city": "Tucson", "state": "Arizona", "country": "USA"},
-                "fresno": {"city": "Fresno", "state": "California", "country": "USA"},
-                "raleigh": {"city": "Raleigh", "state": "North Carolina", "country": "USA"},
-                "buffalo": {"city": "Buffalo", "state": "New York", "country": "USA"},
-                "richmond": {"city": "Richmond", "state": "Virginia", "country": "USA"},
-                "grand_rapids": {"city": "Grand Rapids", "state": "Michigan", "country": "USA"}
-            }
-
-            if self.region in region_queries:
+            if self.region in self._region_queries:
                 logger.info(f"Loading boundary data for {self.region} from OpenStreetMap...")
-
-                # Configure osmnx
-                # ox.settings(use_cache=True, log_console=True)
 
                 try:
                     # First attempt: Try to get the administrative boundary
                     gdf = ox.geocode_to_gdf(
-                        region_queries[self.region],
+                        self._region_queries[self.region],
                         which_result=1
                     )
                 except Exception as e:
                     logger.warning(f"Could not get administrative boundary: {e}")
                     # Second attempt: Get the place boundary
                     gdf = ox.features_from_place(
-                        region_queries[self.region],
+                        self._region_queries[self.region],
                         tags={'boundary': 'administrative'}
                     )
                     # Dissolve all boundaries into one
@@ -167,7 +193,7 @@ class FakeGeospatialDataGenerator:
                 if hasattr(self, 'graph'):
                     logger.info("Loading street network...")
                     G = ox.graph_from_place(
-                        region_queries[self.region],
+                        self._region_queries[self.region],
                         network_type='drive'
                     )
                     self.graph = G
@@ -247,87 +273,6 @@ class FakeGeospatialDataGenerator:
 
         except Exception as e:
             logger.error(f"Error generating points: {str(e)}")
-            raise
-
-    def generate_street_network(self):
-        """Generate a fake street network using NetworkX"""
-        try:
-            # Get boundary bounds
-            minx, miny, maxx, maxy = self.boundary.total_bounds
-
-            # Create a grid-like street network
-            n_grid = 20  # 20x20 grid
-            G = nx.grid_2d_graph(n_grid, n_grid)
-
-            # Convert grid coordinates to geo coordinates
-            pos = {}
-            node_gdf_data = []
-
-            x_spacing = (maxx - minx) / (n_grid - 1)
-            y_spacing = (maxy - miny) / (n_grid - 1)
-
-            for i in range(n_grid):
-                for j in range(n_grid):
-                    # Convert grid coordinates to geographic coordinates
-                    x = minx + i * x_spacing
-                    y = miny + j * y_spacing
-
-                    # Add small random offset
-                    x += np.random.normal(0, x_spacing / 10)
-                    y += np.random.normal(0, y_spacing / 10)
-
-                    node = (i, j)
-                    pos[node] = (x, y)
-                    node_gdf_data.append(
-                        {"node_id": f"{i}_{j}", "geometry": Point(x, y)}
-                    )
-
-            # Create edges (streets) with attributes
-            edges_gdf_data = []
-            for edge in G.edges():
-                start_pos = pos[edge[0]]
-                end_pos = pos[edge[1]]
-
-                # Create street segment
-                street = LineString([start_pos, end_pos])
-
-                # Add street attributes
-                edges_gdf_data.append(
-                    {
-                        "edge_id": f"{edge[0]}_{edge[1]}",
-                        "geometry": street,
-                        "length": street.length * 111000,  # Approximate meters
-                        "speed_limit": np.random.choice([25, 30, 35, 40, 45]),  # mph
-                        "street_type": np.random.choice(
-                            ["residential", "arterial", "collector"]
-                        ),
-                    }
-                )
-
-            # Create GeoDataFrames for nodes and edges
-            self.nodes_gdf = gpd.GeoDataFrame(node_gdf_data, crs="EPSG:4326")
-            self.street_network = gpd.GeoDataFrame(edges_gdf_data, crs="EPSG:4326")
-
-            # Create NetworkX graph with geographic coordinates
-            self.graph = nx.Graph()
-
-            # Add nodes with positions
-            for node, position in pos.items():
-                self.graph.add_node(node, pos=position)
-
-            # Add edges with weights based on length
-            for edge in G.edges():
-                start_pos = pos[edge[0]]
-                end_pos = pos[edge[1]]
-                weight = (
-                                 (start_pos[0] - end_pos[0]) ** 2 + (start_pos[1] - end_pos[1]) ** 2
-                         ) ** 0.5
-                self.graph.add_edge(edge[0], edge[1], weight=weight)
-
-            logger.info("Successfully generated street network")
-
-        except Exception as e:
-            logger.error(f"Error generating street network: {str(e)}")
             raise
 
     def generate_routes(self):
@@ -576,6 +521,10 @@ class FakeGeospatialDataGenerator:
     def plot_boundary(self):
         """Plot the loaded boundary with contextual information"""
         try:
+            if self.boundary is None:
+                logger.warning("No boundary data available to plot")
+                return False
+
             fig, ax = plt.subplots(figsize=(15, 10))
 
             # Plot the boundary
@@ -587,7 +536,7 @@ class FakeGeospatialDataGenerator:
             )
 
             # If we have street network data, plot it
-            if hasattr(self, 'street_network'):
+            if hasattr(self, 'street_network') and self.street_network is not None:
                 self.street_network.plot(
                     ax=ax,
                     color='blue',
@@ -658,6 +607,12 @@ class FakeGeospatialDataGenerator:
     def _ensure_graph_loaded(self):
         """Ensure the graph is loaded with proper CRS"""
         try:
+            # Check cache first
+            if self.region in self._graph_cache:
+                self.graph = self._graph_cache[self.region]
+                logger.info(f"Loaded street network for {self.region} from cache")
+                return self.graph
+
             if not hasattr(self, 'graph') or self.graph is None:
                 logger.info("Loading street network from OSM...")
 
@@ -680,7 +635,9 @@ class FakeGeospatialDataGenerator:
                 edges = self._ensure_crs(edges)
                 self.graph = ox.graph_from_gdfs(nodes, edges)
 
-                logger.info("Street network loaded successfully with CRS EPSG:4326")
+                # Cache the graph
+                self._graph_cache[self.region] = self.graph
+                logger.info("Street network loaded successfully and cached")
 
             return self.graph
         except Exception as e:
@@ -714,6 +671,13 @@ class FakeGeospatialDataGenerator:
             except:
                 raise ValueError(f"Could not ensure CRS: {str(e)}")
 
+    @classmethod
+    def clear_cache(cls):
+        """Clear the cached boundary and graph data"""
+        cls._boundary_cache.clear()
+        cls._graph_cache.clear()
+        logger.info("Cache cleared")
+
 
 def main():
     region = "portland"
@@ -741,6 +705,9 @@ def main():
     polygon_generator.generate_data()
     polygon_generator.plot_data()
     polygon_generator.save_data(format="shapefile")
+
+    # Clear cache
+    FakeGeospatialDataGenerator.clear_cache()
 
 
 if __name__ == "__main__":
