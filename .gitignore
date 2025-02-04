@@ -21,3 +21,4 @@ src/logs
 src/test_data
 Data/
 *.png
+cache/

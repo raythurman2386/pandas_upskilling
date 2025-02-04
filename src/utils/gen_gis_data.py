@@ -1,7 +1,8 @@
-import pandas as pd
 import geopandas as gpd
 import numpy as np
+import osmnx as ox
 from shapely.geometry import Point, LineString, Polygon
+from shapely.ops import unary_union
 import networkx as nx
 from datetime import datetime, timedelta
 import os
@@ -12,7 +13,7 @@ logger = setup_logger(__name__)
 
 
 class FakeGeospatialDataGenerator:
-    def __init__(self, data_type="points", region="new_york", num_points=1000):
+    def __init__(self, data_type="points", region="seattle", num_points=1000):
         self.data_type = data_type
         self.region = region
         self.num_points = num_points
@@ -24,46 +25,202 @@ class FakeGeospatialDataGenerator:
 
         # Load or create boundary
         self.load_boundary()
-        self.generate_street_network()
+        self.plot_boundary()
+        # Ensure boundary has correct CRS
+        if self.boundary is not None:
+            self.boundary = self._ensure_crs(self.boundary)
 
     def load_boundary(self):
-        """Load boundary data for the specified region"""
+        """Load boundary data from OpenStreetMap"""
         try:
-            # You would typically load actual shapefiles here
-            # For demonstration, creating simple boundaries
-            boundaries = {
-                "seattle": Polygon(
-                    [
+            # Dictionary of preset regions with their query parameters
+            region_queries = {
+                # West Coast
+                "seattle": {"city": "Seattle", "state": "Washington", "country": "USA"},
+                "portland": {"city": "Portland", "state": "Oregon", "country": "USA"},
+                "san_francisco": {"city": "San Francisco", "state": "California", "country": "USA"},
+                "los_angeles": {"city": "Los Angeles", "state": "California", "country": "USA"},
+
+                # Mountain States
+                "denver": {"city": "Denver", "state": "Colorado", "country": "USA"},
+                "salt_lake_city": {"city": "Salt Lake City", "state": "Utah", "country": "USA"},
+                "phoenix": {"city": "Phoenix", "state": "Arizona", "country": "USA"},
+                "las_vegas": {"city": "Las Vegas", "state": "Nevada", "country": "USA"},
+                "boise": {"city": "Boise", "state": "Idaho", "country": "USA"},
+                "helena": {"city": "Helena", "state": "Montana", "country": "USA"},
+                "santa_fe": {"city": "Santa Fe", "state": "New Mexico", "country": "USA"},
+                "cheyenne": {"city": "Cheyenne", "state": "Wyoming", "country": "USA"},
+
+                # Midwest
+                "chicago": {"city": "Chicago", "state": "Illinois", "country": "USA"},
+                "detroit": {"city": "Detroit", "state": "Michigan", "country": "USA"},
+                "minneapolis": {"city": "Minneapolis", "state": "Minnesota", "country": "USA"},
+                "milwaukee": {"city": "Milwaukee", "state": "Wisconsin", "country": "USA"},
+                "indianapolis": {"city": "Indianapolis", "state": "Indiana", "country": "USA"},
+                "columbus": {"city": "Columbus", "state": "Ohio", "country": "USA"},
+                "kansas_city": {"city": "Kansas City", "state": "Missouri", "country": "USA"},
+                "omaha": {"city": "Omaha", "state": "Nebraska", "country": "USA"},
+                "des_moines": {"city": "Des Moines", "state": "Iowa", "country": "USA"},
+                "sioux_falls": {"city": "Sioux Falls", "state": "South Dakota", "country": "USA"},
+                "bismarck": {"city": "Bismarck", "state": "North Dakota", "country": "USA"},
+
+                # Northeast
+                "new_york": {"city": "New York City", "state": "New York", "country": "USA"},
+                "boston": {"city": "Boston", "state": "Massachusetts", "country": "USA"},
+                "philadelphia": {"city": "Philadelphia", "state": "Pennsylvania", "country": "USA"},
+                "providence": {"city": "Providence", "state": "Rhode Island", "country": "USA"},
+                "hartford": {"city": "Hartford", "state": "Connecticut", "country": "USA"},
+                "portland_me": {"city": "Portland", "state": "Maine", "country": "USA"},
+                "manchester": {"city": "Manchester", "state": "New Hampshire", "country": "USA"},
+                "burlington": {"city": "Burlington", "state": "Vermont", "country": "USA"},
+                "baltimore": {"city": "Baltimore", "state": "Maryland", "country": "USA"},
+                "newark": {"city": "Newark", "state": "New Jersey", "country": "USA"},
+                "wilmington": {"city": "Wilmington", "state": "Delaware", "country": "USA"},
+
+                # South
+                "miami": {"city": "Miami", "state": "Florida", "country": "USA"},
+                "atlanta": {"city": "Atlanta", "state": "Georgia", "country": "USA"},
+                "nashville": {"city": "Nashville", "state": "Tennessee", "country": "USA"},
+                "charlotte": {"city": "Charlotte", "state": "North Carolina", "country": "USA"},
+                "virginia_beach": {"city": "Virginia Beach", "state": "Virginia", "country": "USA"},
+                "charleston": {"city": "Charleston", "state": "South Carolina", "country": "USA"},
+                "new_orleans": {"city": "New Orleans", "state": "Louisiana", "country": "USA"},
+                "houston": {"city": "Houston", "state": "Texas", "country": "USA"},
+                "birmingham": {"city": "Birmingham", "state": "Alabama", "country": "USA"},
+                "jackson": {"city": "Jackson", "state": "Mississippi", "country": "USA"},
+                "little_rock": {"city": "Little Rock", "state": "Arkansas", "country": "USA"},
+                "louisville": {"city": "Louisville", "state": "Kentucky", "country": "USA"},
+                "oklahoma_city": {"city": "Oklahoma City", "state": "Oklahoma", "country": "USA"},
+                "charleston_wv": {"city": "Charleston", "state": "West Virginia", "country": "USA"},
+
+                # Non-Contiguous States
+                "anchorage": {"city": "Anchorage", "state": "Alaska", "country": "USA"},
+                "honolulu": {"city": "Honolulu", "state": "Hawaii", "country": "USA"},
+
+                # Additional Major Cities
+                "san_diego": {"city": "San Diego", "state": "California", "country": "USA"},
+                "dallas": {"city": "Dallas", "state": "Texas", "country": "USA"},
+                "san_antonio": {"city": "San Antonio", "state": "Texas", "country": "USA"},
+                "austin": {"city": "Austin", "state": "Texas", "country": "USA"},
+                "memphis": {"city": "Memphis", "state": "Tennessee", "country": "USA"},
+                "st_louis": {"city": "St. Louis", "state": "Missouri", "country": "USA"},
+                "pittsburgh": {"city": "Pittsburgh", "state": "Pennsylvania", "country": "USA"},
+                "cincinnati": {"city": "Cincinnati", "state": "Ohio", "country": "USA"},
+                "cleveland": {"city": "Cleveland", "state": "Ohio", "country": "USA"},
+                "tampa": {"city": "Tampa", "state": "Florida", "country": "USA"},
+                "orlando": {"city": "Orlando", "state": "Florida", "country": "USA"},
+                "sacramento": {"city": "Sacramento", "state": "California", "country": "USA"},
+                "portland_or": {"city": "Portland", "state": "Oregon", "country": "USA"},
+                "albuquerque": {"city": "Albuquerque", "state": "New Mexico", "country": "USA"},
+                "tucson": {"city": "Tucson", "state": "Arizona", "country": "USA"},
+                "fresno": {"city": "Fresno", "state": "California", "country": "USA"},
+                "raleigh": {"city": "Raleigh", "state": "North Carolina", "country": "USA"},
+                "buffalo": {"city": "Buffalo", "state": "New York", "country": "USA"},
+                "richmond": {"city": "Richmond", "state": "Virginia", "country": "USA"},
+                "grand_rapids": {"city": "Grand Rapids", "state": "Michigan", "country": "USA"}
+            }
+
+            if self.region in region_queries:
+                logger.info(f"Loading boundary data for {self.region} from OpenStreetMap...")
+
+                # Configure osmnx
+                # ox.settings(use_cache=True, log_console=True)
+
+                try:
+                    # First attempt: Try to get the administrative boundary
+                    gdf = ox.geocode_to_gdf(
+                        region_queries[self.region],
+                        which_result=1
+                    )
+                except Exception as e:
+                    logger.warning(f"Could not get administrative boundary: {e}")
+                    # Second attempt: Get the place boundary
+                    gdf = ox.features_from_place(
+                        region_queries[self.region],
+                        tags={'boundary': 'administrative'}
+                    )
+                    # Dissolve all boundaries into one
+                    gdf = gdf.dissolve()
+
+                # Ensure we have a valid boundary
+                if gdf.empty:
+                    raise ValueError(f"No boundary found for {self.region}")
+
+                # Convert to EPSG:4326 if needed
+                if gdf.crs != "EPSG:4326":
+                    gdf = gdf.to_crs("EPSG:4326")
+
+                # Simplify the boundary slightly to improve performance
+                gdf.geometry = gdf.geometry.simplify(tolerance=0.001)
+
+                # Create a single polygon if multiple exist
+                if len(gdf) > 1:
+                    combined_geom = unary_union(gdf.geometry.values)
+                    gdf = gpd.GeoDataFrame(
+                        geometry=[combined_geom],
+                        crs="EPSG:4326"
+                    )
+
+                self.boundary = gdf
+
+                # Optional: Load street network for the area
+                if hasattr(self, 'graph'):
+                    logger.info("Loading street network...")
+                    G = ox.graph_from_place(
+                        region_queries[self.region],
+                        network_type='drive'
+                    )
+                    self.graph = G
+
+                    # Convert street network to GeoDataFrame
+                    nodes, edges = ox.graph_to_gdfs(G)
+                    self.nodes_gdf = nodes
+                    self.street_network = edges
+
+                logger.info(f"Successfully loaded boundary and street network for {self.region}")
+
+                # Save boundary to file for caching
+                cache_dir = os.path.join(self.DATA_DIR, 'cache')
+                os.makedirs(cache_dir, exist_ok=True)
+                cache_file = os.path.join(cache_dir, f"{self.region}_boundary.geojson")
+                self.boundary.to_file(cache_file, driver='GeoJSON')
+
+            else:
+                # Fallback to simple rectangular boundary if region not found
+                logger.warning(f"Region {self.region} not found in preset queries, using fallback boundary")
+                boundaries = {
+                    "default": Polygon([
                         (-122.4359, 47.5003),
                         (-122.4359, 47.7340),
                         (-122.2359, 47.7340),
                         (-122.2359, 47.5003),
-                        (-122.4359, 47.5003),
-                    ]
-                ),
-                "new_york": Polygon(
-                    [
-                        (-74.2557, 40.4957),
-                        (-74.2557, 40.9176),
-                        (-73.7002, 40.9176),
-                        (-73.7002, 40.4957),
-                        (-74.2557, 40.4957),
-                    ]
-                ),
-            }
+                        (-122.4359, 47.5003)
+                    ])
+                }
 
-            if self.region not in boundaries:
-                raise ValueError(f"Region {self.region} not found")
+                self.boundary = gpd.GeoDataFrame(
+                    {'geometry': [boundaries["default"]]},
+                    crs="EPSG:4326"
+                )
 
-            self.boundary = gpd.GeoDataFrame(
-                {"geometry": [boundaries[self.region]]}, crs="EPSG:4326"
-            )
-
-            logger.info(f"Loaded boundary for {self.region}")
+            return True
 
         except Exception as e:
             logger.error(f"Error loading boundary: {str(e)}")
-            raise
+            logger.error("Falling back to default boundary")
+            # Create a simple default boundary
+            default_boundary = Polygon([
+                (-122.4359, 47.5003),
+                (-122.4359, 47.7340),
+                (-122.2359, 47.7340),
+                (-122.2359, 47.5003),
+                (-122.4359, 47.5003)
+            ])
+            self.boundary = gpd.GeoDataFrame(
+                {'geometry': [default_boundary]},
+                crs="EPSG:4326"
+            )
+            return False
 
     def generate_random_points(self):
         """Generate random points within boundary"""
@@ -163,8 +320,8 @@ class FakeGeospatialDataGenerator:
                 start_pos = pos[edge[0]]
                 end_pos = pos[edge[1]]
                 weight = (
-                    (start_pos[0] - end_pos[0]) ** 2 + (start_pos[1] - end_pos[1]) ** 2
-                ) ** 0.5
+                                 (start_pos[0] - end_pos[0]) ** 2 + (start_pos[1] - end_pos[1]) ** 2
+                         ) ** 0.5
                 self.graph.add_edge(edge[0], edge[1], weight=weight)
 
             logger.info("Successfully generated street network")
@@ -174,69 +331,55 @@ class FakeGeospatialDataGenerator:
             raise
 
     def generate_routes(self):
-        """Generate fake route data using the street network"""
+        """Generate routes using real street network data from OSM"""
         try:
+            self.graph = self._ensure_graph_loaded()
+
+            nodes_gdf, edges_gdf = ox.graph_to_gdfs(self.graph)
+
             routes = []
             route_data = []
 
-            # Get all nodes as a list of tuples
             nodes = list(self.graph.nodes())
 
+            if len(nodes) < 2:
+                raise ValueError("Not enough nodes in the network")
+
             for i in range(self.num_points):
-                # Select random start and end nodes
-                start_node = nodes[np.random.randint(0, len(nodes))]
-                end_node = nodes[np.random.randint(0, len(nodes))]
-
-                # Ensure start and end nodes are different
-                while start_node == end_node:
-                    end_node = nodes[np.random.randint(0, len(nodes))]
-
                 try:
-                    # Find shortest path between nodes
-                    path = nx.shortest_path(
-                        self.graph, start_node, end_node, weight="weight"
-                    )
+                    origin_node = np.random.choice(nodes)
+                    dest_node = np.random.choice(nodes)
+                    while origin_node == dest_node:
+                        dest_node = np.random.choice(nodes)
 
-                    # Convert path to coordinates
-                    path_coords = []
-                    for node in path:
-                        pos = self.graph.nodes[node]["pos"]
-                        path_coords.append((pos[0], pos[1]))
+                    route_nodes = nx.shortest_path(self.graph, origin_node, dest_node, weight='length')
+                    route_coords = [(nodes_gdf.loc[node].geometry.x, nodes_gdf.loc[node].geometry.y) for node in route_nodes]
 
-                    # Create route line
-                    route = LineString(path_coords)
-
-                    # Calculate route metrics
-                    route_length = route.length * 111000  # Approximate meters
-                    avg_speed = np.random.uniform(20, 40)  # mph
-                    duration = (route_length / 1609.34) / avg_speed * 60  # minutes
+                    route = LineString(route_coords)
+                    route_length = sum(edges_gdf.loc[(route_nodes[i], route_nodes[i + 1], 0), 'length'] for i in range(len(route_nodes) - 1))
 
                     routes.append(route)
-                    route_data.append(
-                        {
-                            "route_id": i,
-                            "distance": route_length,
-                            "duration": duration,
-                            "vehicle_type": np.random.choice(["car", "truck", "bike"]),
-                            "start_time": datetime.now()
-                            + timedelta(minutes=np.random.randint(0, 1440)),
-                            "avg_speed": avg_speed,
-                            "num_stops": len(path) - 1,
-                        }
-                    )
+                    route_data.append({
+                        'route_id': i,
+                        'distance': route_length,
+                        'duration': route_length / 1609.34 / np.random.uniform(20, 40) * 60,
+                        'vehicle_type': np.random.choice(['car', 'truck', 'bike']),
+                        'start_time': datetime.now() + timedelta(minutes=np.random.randint(0, 1440)),
+                        'num_stops': len(route_nodes) - 1
+                    })
 
-                except nx.NetworkXNoPath:
-                    logger.warning(
-                        f"No path found between nodes {start_node} and {end_node}"
-                    )
+                    if (i + 1) % 10 == 0:
+                        logger.info(f"Generated {i+1} routes...")
+
+                except Exception as e:
+                    logger.warning(f"Error generating route {i}: {str(e)}")
                     continue
 
             if not routes:
                 raise ValueError("No valid routes were generated")
 
-            # Create GeoDataFrame with routes
-            routes_gdf = gpd.GeoDataFrame(route_data, geometry=routes, crs="EPSG:4326")
-
+            routes_gdf = gpd.GeoDataFrame(route_data, geometry=routes)
+            logger.info(f"Successfully generated {len(routes_gdf)} routes")
             return routes_gdf
 
         except Exception as e:
@@ -247,21 +390,24 @@ class FakeGeospatialDataGenerator:
         """Generate fake polygon data (e.g., service areas, zones) without overlaps"""
         try:
             # Generate center points for polygons with minimum distance constraint
-            points_gdf = self.generate_random_points()
+            points = self.generate_random_points()
+            points_gdf = self._ensure_crs(points)
 
             polygons = []
             polygon_data = []
-            buffer_distance = 0.002
+
+            # Create a list to store polygon bounds for overlap checking
+            existing_polygons = []
 
             for idx, point in enumerate(points_gdf.geometry):
                 attempts = 0
-                max_attempts = 5
+                max_attempts = 10
+                buffer_distance = 0.002
 
                 while attempts < max_attempts:
                     # Create random polygon around point
                     num_points = np.random.randint(6, 10)
                     angles = np.linspace(0, 360, num_points)
-                    # Randomize distances but keep them within a reasonable range
                     base_distance = np.random.uniform(0.001, 0.003)
                     distances = base_distance + np.random.uniform(-0.0005, 0.0005, len(angles))
 
@@ -274,40 +420,36 @@ class FakeGeospatialDataGenerator:
                     # Close the polygon
                     polygon_points.append(polygon_points[0])
 
-                    # Create the polygon
+                    # Create and validate polygon
                     polygon = Polygon(polygon_points)
-
-                    # Check if polygon is valid and within boundary
                     if not polygon.is_valid:
                         attempts += 1
                         continue
 
-                    # Buffer the polygon slightly to ensure no exact edges touch
+                    # Buffer slightly to ensure no edges touch
                     buffered = polygon.buffer(0.0001)
 
-                    # Check if the polygon is within boundary
+                    # Check if within boundary
                     if not self.boundary.geometry.iloc[0].contains(buffered):
                         attempts += 1
                         continue
 
                     # Check for overlaps with existing polygons
-                    is_overlapping = False
-                    if polygons:
-                        # Create a temporary GeoDataFrame with existing polygons
-                        existing_polygons = gpd.GeoDataFrame(geometry=polygons)
-                        # Buffer existing polygons and check for intersection
-                        buffered_existing = existing_polygons.geometry.buffer(buffer_distance)
-                        if any(buffered_existing.intersects(buffered)):
-                            is_overlapping = True
+                    overlapping = False
+                    for existing_poly in existing_polygons:
+                        if buffered.intersects(existing_poly):
+                            overlapping = True
+                            break
 
-                    if not is_overlapping:
+                    if not overlapping:
                         polygons.append(polygon)
+                        existing_polygons.append(buffered)
                         polygon_data.append({
-                            'zone_id': idx,
-                            'area': polygon.area * (111000 ** 2),  # Approximate square meters
+                            'zone_id': len(polygons)-1,
+                            'area': polygon.area * (111000 ** 2),
                             'category': np.random.choice(['residential', 'commercial', 'industrial']),
                             'population': np.random.randint(100, 10000),
-                            'density': np.random.uniform(1000, 5000)  # people per square km
+                            'density': np.random.uniform(1000, 5000)
                         })
                         break
 
@@ -323,15 +465,8 @@ class FakeGeospatialDataGenerator:
             polygons_gdf = gpd.GeoDataFrame(
                 polygon_data,
                 geometry=polygons,
-                crs="EPSG:4326"
             )
-
-            # Add color column for visualization
-            polygons_gdf['color'] = polygons_gdf['category'].map({
-                'residential': 'lightblue',
-                'commercial': 'lightgreen',
-                'industrial': 'salmon'
-            })
+            polygons_gdf = self._ensure_crs(polygons_gdf)
 
             logger.info(f"Successfully generated {len(polygons_gdf)} non-overlapping polygons")
             return polygons_gdf
@@ -371,59 +506,63 @@ class FakeGeospatialDataGenerator:
             return False
 
     def plot_data(self):
-        """Plot the generated geospatial data with street network"""
+        """Plot the generated geospatial data"""
         try:
             if self.data is None:
                 raise ValueError("No data to plot. Run generate_data first.")
 
             fig, ax = plt.subplots(figsize=(15, 10))
 
+            boundary_plot = self.boundary.copy()
+            plot_data = self.data.copy()
+
             # Plot boundary
-            self.boundary.plot(ax=ax, alpha=0.1, color='gray')
+            boundary_plot.plot(ax=ax, alpha=0.1, color='gray', zorder=1)
 
-            # Plot street network if it exists
-            if hasattr(self, 'street_network'):
-                self.street_network.plot(ax=ax, color='lightgray', alpha=0.5, linewidth=0.5)
+            # Plot street network
+            if hasattr(self, 'graph') and self.graph is not None:
+                nodes, edges = ox.graph_to_gdfs(self.graph)
+                edges = self._ensure_crs(edges.copy())
+                edges.plot(ax=ax, color='lightgray', alpha=0.5, linewidth=0.5, zorder=2)
 
-            # Different plotting logic based on data type
+            # Plot data based on type
             if self.data_type == "routes":
-                # Plot routes with different colors based on vehicle type
-                for vtype in self.data['vehicle_type'].unique():
-                    mask = self.data['vehicle_type'] == vtype
-                    self.data[mask].plot(
-                        ax=ax,
-                        alpha=0.6,
-                        label=vtype,
-                        linewidth=2
-                    )
+                for vtype in ['car', 'truck', 'bike']:
+                    mask = plot_data['vehicle_type'] == vtype
+                    if mask.any():
+                        plot_data[mask].plot(
+                            ax=ax,
+                            alpha=0.6,
+                            label=vtype,
+                            linewidth=2,
+                            zorder=3
+                        )
                 plt.legend()
-
             elif self.data_type == "polygons":
-                # Plot polygons with category-based colors and black borders
-                self.data.plot(
+                plot_data.plot(
                     ax=ax,
                     column='category',
                     categorical=True,
                     legend=True,
                     alpha=0.5,
                     edgecolor='black',
-                    linewidth=0.5
+                    linewidth=0.5,
+                    zorder=3
                 )
-
             else:
-                # Default plotting for points or other data types
-                self.data.plot(
+                plot_data.plot(
                     ax=ax,
                     alpha=0.6,
-                    column='point_id' if 'point_id' in self.data.columns else None,
-                    cmap='viridis'
+                    column='point_id' if 'point_id' in plot_data.columns else None,
+                    cmap='viridis',
+                    zorder=3
                 )
 
             plt.title(f'{self.data_type.title()} in {self.region.title()}')
             plt.xlabel('Longitude')
             plt.ylabel('Latitude')
 
-            # Save the plot
+            # Save plot
             plt.savefig(os.path.join(self.DATA_DIR, f'geospatial_{self.region}_{self.data_type}_plot.png'))
             plt.close()
 
@@ -434,11 +573,66 @@ class FakeGeospatialDataGenerator:
             logger.error(f"Error plotting data: {str(e)}")
             return False
 
+    def plot_boundary(self):
+        """Plot the loaded boundary with contextual information"""
+        try:
+            fig, ax = plt.subplots(figsize=(15, 10))
+
+            # Plot the boundary
+            self.boundary.plot(
+                ax=ax,
+                alpha=0.5,
+                edgecolor='black',
+                facecolor='lightgray'
+            )
+
+            # If we have street network data, plot it
+            if hasattr(self, 'street_network'):
+                self.street_network.plot(
+                    ax=ax,
+                    color='blue',
+                    alpha=0.2,
+                    linewidth=0.5
+                )
+
+            # Add title and labels
+            plt.title(f'{self.region.title()} Boundary')
+            plt.xlabel('Longitude')
+            plt.ylabel('Latitude')
+
+            # Add north arrow
+            ax.annotate('N', xy=(0.02, 0.98), xycoords='axes fraction',
+                        fontsize=12, ha='center', va='center')
+
+            # Add scale bar (approximate)
+            bbox = self.boundary.total_bounds
+            scale_length = (bbox[2] - bbox[0]) / 5  # 1/5 of the width
+            scale_x = bbox[0] + scale_length/2
+            scale_y = bbox[1] + (bbox[3] - bbox[1])/10
+            ax.plot([scale_x - scale_length/2, scale_x + scale_length/2],
+                    [scale_y, scale_y], 'k-', linewidth=2)
+            ax.text(scale_x, scale_y * 0.99, f'{scale_length*111:.1f} km',
+                    ha='center', va='top')
+
+            # Save the plot
+            plt.savefig(os.path.join(self.DATA_DIR, f'{self.region}_boundary.png'))
+            plt.close()
+
+            logger.info(f"Boundary plot saved as '{self.region}_boundary.png'")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error plotting boundary: {str(e)}")
+            return False
+
     def save_data(self, format="geojson"):
         """Save the generated data to file"""
         try:
             if self.data is None:
                 raise ValueError("No data to save. Run generate_data first.")
+
+            if self.data.crs is None:
+                self.data = self._ensure_crs(self.data)
 
             filename = (
                 f"{self.data_type}_{self.region}_{datetime.now().strftime('%Y%m%d')}"
@@ -461,10 +655,70 @@ class FakeGeospatialDataGenerator:
             logger.error(f"Error saving data: {str(e)}")
             return None
 
+    def _ensure_graph_loaded(self):
+        """Ensure the graph is loaded with proper CRS"""
+        try:
+            if not hasattr(self, 'graph') or self.graph is None:
+                logger.info("Loading street network from OSM...")
+
+                # Create graph with explicit CRS
+                self.graph = ox.graph_from_polygon(
+                    self.boundary.geometry.iloc[0],
+                    network_type='drive',
+                    simplify=True,
+                    retain_all=False,
+                    truncate_by_edge=True,
+                    clean_periphery=True
+                )
+
+                # Force the graph to use EPSG:4326
+                self.graph = ox.project_graph(self.graph, to_crs="EPSG:4326")
+
+                # Convert to GeoDataFrames and back to ensure CRS is set
+                nodes, edges = ox.graph_to_gdfs(self.graph)
+                nodes = self._ensure_crs(nodes)
+                edges = self._ensure_crs(edges)
+                self.graph = ox.graph_from_gdfs(nodes, edges)
+
+                logger.info("Street network loaded successfully with CRS EPSG:4326")
+
+            return self.graph
+        except Exception as e:
+            logger.error(f"Error ensuring graph is loaded: {str(e)}")
+            raise
+
+    def _ensure_crs(self, gdf, target_crs="EPSG:4326"):
+        """Bulletproof CRS handling"""
+        try:
+            if gdf is None:
+                raise ValueError("Input GeoDataFrame is None")
+
+            # Force set CRS if None
+            if gdf.crs is None:
+                gdf = gdf.set_crs(target_crs)
+                logger.debug(f"Set CRS to {target_crs} for GeoDataFrame")
+
+            # Convert if different CRS
+            if str(gdf.crs).upper() != str(target_crs).upper():
+                gdf = gdf.to_crs(target_crs)
+                logger.debug(f"Converted CRS from {gdf.crs} to {target_crs}")
+
+            return gdf
+
+        except Exception as e:
+            logger.error(f"Error in _ensure_crs: {str(e)}")
+            # If all else fails, force EPSG:4326
+            try:
+                gdf.set_crs("EPSG:4326", inplace=True, allow_override=True)
+                return gdf
+            except:
+                raise ValueError(f"Could not ensure CRS: {str(e)}")
+
 
 def main():
+    region = "portland"
+
     # Generate point data
-    region = "seattle"
     point_generator = FakeGeospatialDataGenerator(
         data_type="points", region=region, num_points=1000
     )
