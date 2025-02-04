@@ -1,3 +1,4 @@
+import sys
 import warnings
 import dask.dataframe as dd
 import networkx as nx
@@ -368,7 +369,7 @@ def advanced_analysis():
 
 if __name__ == "__main__":
     logger.info("Starting all operations")
-    csv_filename = "xrp_historical_data.csv"
+    csv_filename = sys.argv[1]
     df = pd.read_csv(csv_filename)
     validated_data = validate_and_correct_data(df, "Close")
     perform_dask_operations()

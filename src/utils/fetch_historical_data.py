@@ -1,13 +1,11 @@
 import yfinance as yf
 import pandas as pd
 from datetime import datetime, timedelta
-import logging
 import os
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-)
-logger = logging.getLogger(__name__)
+from src.utils.logger import setup_logger
+
+logger = setup_logger(__name__)
 
 
 class CryptoDataFetcher:
