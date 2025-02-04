@@ -74,3 +74,13 @@ def create_dask_dataframe(n_samples=10000):
         {"User": users, "Friend": friends, "Strength": interaction_strength}
     )
     return df
+
+
+def compute_class_weights(y):
+    """Compute balanced class weights"""
+    class_counts = y.value_counts()
+    total = len(y)
+    weights = {
+        i: total / (len(class_counts) * count) for i, count in enumerate(class_counts)
+    }
+    return weights

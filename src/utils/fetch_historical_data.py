@@ -2,19 +2,21 @@ import yfinance as yf
 import pandas as pd
 from datetime import datetime, timedelta
 import os
-
+from matplotlib import pyplot as plt
 from src.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
 
 
 class CryptoDataFetcher:
-    def __init__(self, symbol="XRP-USD", years=10):
+    def __init__(self, symbol="XRP-USD", years=10, interval="1d"):
         self.symbol = symbol
         self.years = years
+        self.interval = interval
         self.start_date = datetime.now() - timedelta(days=years * 365)
         self.end_date = datetime.now()
         self.data = None
+        self.DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 
     def fetch_data(self):
         """Fetch historical data from yfinance"""
@@ -27,7 +29,7 @@ class CryptoDataFetcher:
                 self.symbol,
                 start=self.start_date,
                 end=self.end_date,
-                interval="1d",
+                interval=self.interval,
                 progress=False,
             )
 
@@ -106,8 +108,8 @@ class CryptoDataFetcher:
                 )
 
             # Create data directory if it doesn't exist
-            os.makedirs("data", exist_ok=True)
-            filepath = os.path.join("data", filename)
+            os.makedirs(self.DATA_DIR, exist_ok=True)
+            filepath = os.path.join(self.DATA_DIR, filename)
 
             # Save to CSV with date index
             self.data.to_csv(filepath)
@@ -175,6 +177,35 @@ class CryptoDataFetcher:
             logger.error("Full traceback:", exc_info=True)
             return False
 
+    def plot_data(self):
+        """Plot the generated price data"""
+        try:
+            if self.data is None:
+                raise ValueError("No data to plot. Run generate_data first.")
+
+            plt.figure(figsize=(15, 7))
+            plt.plot(self.data.index, self.data["Price"], label="Price")
+            plt.title(f"{self.symbol} Historic Price History")
+            plt.xlabel("Date")
+            plt.ylabel("Price ($)")
+            plt.grid(True)
+            plt.legend()
+            plt.xticks(rotation=45)
+            plt.tight_layout()
+
+            # Save the plot
+            plt.savefig(self.DATA_DIR + "/historical_price_plot.png")
+            plt.close()
+
+            logger.info(
+                f"Price plot saved as '${self.DATA_DIR}/historical_price_plot.png'"
+            )
+            return True
+
+        except Exception as e:
+            logger.error(f"Error plotting data: {str(e)}")
+            return False
+
 
 def main():
     try:
@@ -200,6 +231,11 @@ def main():
         # Verify saved data
         if not fetcher.verify_data(filepath):
             logger.error("Data verification failed")
+            return
+
+        # Plot data
+        if not fetcher.plot_data():
+            logger.error("Failed to plot data")
             return
 
         logger.info(f"Data pipeline completed successfully. File saved at: {filepath}")
