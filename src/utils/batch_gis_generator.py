@@ -32,10 +32,6 @@ def process_region(
 def batch_process_regions(batch_size: int = 10, wait_minutes: int = 30) -> None:
     """
     Process regions in batches with rate limiting
-
-    Args:
-        batch_size: Number of regions to process in each batch
-        wait_minutes: Number of minutes to wait between batches
     """
     # Get all available regions
     all_regions = list(GeospatialDataGenerator._region_queries.keys())
@@ -71,8 +67,7 @@ def batch_process_regions(batch_size: int = 10, wait_minutes: int = 30) -> None:
 
 
 if __name__ == "__main__":
-    # You can adjust these parameters as needed
     BATCH_SIZE = 10  # Number of regions to process in each batch
-    WAIT_MINUTES = 30  # Minutes to wait between batches
+    WAIT_MINUTES = 30
 
     batch_process_regions(BATCH_SIZE, WAIT_MINUTES)
