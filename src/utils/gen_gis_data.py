@@ -1,6 +1,7 @@
 import geopandas as gpd
 import numpy as np
 import osmnx as ox
+import pandas as pd
 from shapely.geometry import Point, LineString, Polygon
 from shapely.ops import unary_union
 import networkx as nx
@@ -136,6 +137,7 @@ class GeospatialDataGenerator:
         self.boundary = None
         self.DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
         self.graph = None
+        self.analyzed_graph = None
         self.street_network = None
 
         # Load cached data or create new
@@ -174,111 +176,132 @@ class GeospatialDataGenerator:
             self.load_boundary()
 
     def load_boundary(self):
-        """Load boundary data from OpenStreetMap"""
+        """Load boundary data and street network from OpenStreetMap"""
         try:
-            if self.region in self._region_queries:
-                logger.info(
-                    f"Loading boundary data for {self.region} from OpenStreetMap..."
-                )
-
-                try:
-                    # First attempt: Try to get the administrative boundary
-                    gdf = ox.geocode_to_gdf(
-                        self._region_queries[self.region], which_result=1
-                    )
-                except Exception as e:
-                    logger.warning(f"Could not get administrative boundary: {e}")
-                    # Second attempt: Get the place boundary
-                    gdf = ox.features_from_place(
-                        self._region_queries[self.region],
-                        tags={"boundary": "administrative"},
-                    )
-                    # Dissolve all boundaries into one
-                    gdf = gdf.dissolve()
-
-                # Ensure we have a valid boundary
-                if gdf.empty:
-                    raise ValueError(f"No boundary found for {self.region}")
-
-                # Convert to EPSG:4326 if needed
-                if gdf.crs != "EPSG:4326":
-                    gdf = gdf.to_crs("EPSG:4326")
-
-                # Simplify the boundary slightly to improve performance
-                gdf.geometry = gdf.geometry.simplify(tolerance=0.001)
-
-                # Create a single polygon if multiple exist
-                if len(gdf) > 1:
-                    combined_geom = unary_union(gdf.geometry.values)
-                    gdf = gpd.GeoDataFrame(geometry=[combined_geom], crs="EPSG:4326")
-
-                self.boundary = gdf
-
-                # Optional: Load street network for the area
-                if hasattr(self, "graph"):
-                    logger.info("Loading street network...")
-                    G = ox.graph_from_place(
-                        self._region_queries[self.region], network_type="drive"
-                    )
-                    self.graph = G
-
-                    # Convert street network to GeoDataFrame
-                    nodes, edges = ox.graph_to_gdfs(G)
-                    self.nodes_gdf = nodes
-                    self.street_network = edges
-
-                logger.info(
-                    f"Successfully loaded boundary and street network for {self.region}"
-                )
-
-                # Save boundary to file for caching
-                cache_dir = os.path.join(self.DATA_DIR, "cache")
-                os.makedirs(cache_dir, exist_ok=True)
-                cache_file = os.path.join(cache_dir, f"{self.region}_boundary.geojson")
-                self.boundary.to_file(cache_file, driver="GeoJSON")
-
-            else:
-                # Fallback to simple rectangular boundary if region not found
+            if self.region not in self._region_queries:
                 logger.warning(
-                    f"Region {self.region} not found in preset queries, using fallback boundary"
+                    f"Region {self.region} not found, using fallback boundary"
                 )
-                boundaries = {
-                    "default": Polygon(
-                        [
-                            (-122.4359, 47.5003),
-                            (-122.4359, 47.7340),
-                            (-122.2359, 47.7340),
-                            (-122.2359, 47.5003),
-                            (-122.4359, 47.5003),
-                        ]
-                    )
-                }
+                self._load_fallback_boundary()
+                return False
 
-                self.boundary = gpd.GeoDataFrame(
-                    {"geometry": [boundaries["default"]]}, crs="EPSG:4326"
+            logger.info(
+                f"Loading boundary data for {self.region} from OpenStreetMap..."
+            )
+
+            # Load boundary
+            gdf = self._load_boundary_gdf()
+            if gdf is None:
+                self._load_fallback_boundary()
+                return False
+
+            # Process and store boundary
+            self.boundary = self._process_boundary(gdf)
+
+            # Load street network
+            logger.info("Loading street network...")
+            self.graph = ox.graph_from_place(
+                self._region_queries[self.region],
+                network_type="drive",
+                simplify=True,
+                retain_all=True,
+                truncate_by_edge=True,
+            )
+
+            # Add routing attributes
+            self.graph = ox.add_edge_speeds(self.graph)
+            self.graph = ox.add_edge_travel_times(self.graph)
+            state = (
+                self._region_queries[self.region]["state"].lower().replace(" ", "_")
+            )
+
+            # Create base directory structure
+            data_type_dir = os.path.join(self.DATA_DIR, "street_network")
+            os.makedirs(data_type_dir, exist_ok=True)
+
+            states_dir = os.path.join(data_type_dir, state)
+            os.makedirs(states_dir, exist_ok=True)
+
+            filename = (
+                    f"street_network_{self.region}_{datetime.now().strftime('%Y%m%d')}"
                 )
+            filepath = os.path.join(states_dir, f"{filename}.gpkg")
+            ox.io.save_graph_geopackage(self.graph, filepath=filepath)
+            logger.info(f"Street network saved to {filepath}")
 
+            # Cache boundary
+            self._cache_boundary()
+
+            logger.info(
+                f"Successfully loaded boundary and street network for {self.region}"
+            )
             return True
 
         except Exception as e:
             logger.error(f"Error loading boundary: {str(e)}")
-            logger.error("Falling back to default boundary")
-            # Create a simple default boundary
-            default_boundary = Polygon(
-                [
-                    (-122.4359, 47.5003),
-                    (-122.4359, 47.7340),
-                    (-122.2359, 47.7340),
-                    (-122.2359, 47.5003),
-                    (-122.4359, 47.5003),
-                ]
-            )
-            self.boundary = gpd.GeoDataFrame(
-                {"geometry": [default_boundary]}, crs="EPSG:4326"
-            )
+            self._load_fallback_boundary()
             return False
 
-    def generate_random_points(self):
+    def _load_boundary_gdf(self):
+        """Load boundary GeoDataFrame from OSM"""
+        try:
+            # First attempt: Try to get the administrative boundary
+            return ox.geocode_to_gdf(self._region_queries[self.region], which_result=1)
+        except Exception as e:
+            logger.warning(f"Could not get administrative boundary: {e}")
+            try:
+                # Second attempt: Get the place boundary
+                gdf = ox.features_from_place(
+                    self._region_queries[self.region],
+                    tags={"boundary": "administrative"},
+                )
+                return gdf.dissolve()
+            except Exception as e:
+                logger.error(f"Could not get place boundary: {e}")
+                return None
+
+    def _process_boundary(self, gdf):
+        """Process boundary GeoDataFrame"""
+        if gdf.empty:
+            raise ValueError(f"No boundary found for {self.region}")
+
+        # Ensure correct CRS
+        if gdf.crs != "EPSG:4326":
+            gdf = gdf.to_crs("EPSG:4326")
+
+        # Simplify geometry
+        gdf.geometry = gdf.geometry.simplify(tolerance=0.001)
+
+        # Combine multiple polygons if needed
+        if len(gdf) > 1:
+            combined_geom = unary_union(gdf.geometry.values)
+            gdf = gpd.GeoDataFrame(geometry=[combined_geom], crs="EPSG:4326")
+
+        return gdf
+
+    def _cache_boundary(self):
+        """Cache boundary data to file"""
+        cache_dir = os.path.join(self.DATA_DIR, "cache")
+        os.makedirs(cache_dir, exist_ok=True)
+        cache_file = os.path.join(cache_dir, f"{self.region}_boundary.geojson")
+        self.boundary.to_file(cache_file, driver="GeoJSON")
+
+    def _load_fallback_boundary(self):
+        """Load fallback boundary when OSM data is unavailable"""
+        default_boundary = Polygon(
+            [
+                (-122.4359, 47.5003),
+                (-122.4359, 47.7340),
+                (-122.2359, 47.7340),
+                (-122.2359, 47.5003),
+                (-122.4359, 47.5003),
+            ]
+        )
+        self.boundary = gpd.GeoDataFrame(
+            {"geometry": [default_boundary]}, crs="EPSG:4326"
+        )
+
+    def generate_pois(self):
         """Generate points using real Points of Interest (POIs) from OpenStreetMap"""
         try:
             logger.info(
@@ -568,13 +591,13 @@ class GeospatialDataGenerator:
             raise
 
     def generate_data(self):
-        """Generate fake geospatial data based on type"""
+        """Generate geospatial data based on type"""
         try:
             # Check if the cache needs cleared
             self.clear_cache(max_cache_size=50)
 
-            if self.data_type == "points":
-                self.data = self.generate_random_points()
+            if self.data_type == "pois":
+                self.data = self.generate_pois()
 
             elif self.data_type == "routes":
                 self.data = self.generate_routes()
@@ -597,6 +620,16 @@ class GeospatialDataGenerator:
         try:
             if self.data is None:
                 raise ValueError("No data to plot. Run generate_data first.")
+
+            # Create base directory structure
+            state = (
+                self._region_queries[self.region]["state"].lower().replace(" ", "_")
+            )
+
+            plots_dir = os.path.join(self.DATA_DIR, "plots")
+            os.makedirs(plots_dir, exist_ok=True)
+            states_dir = os.path.join(plots_dir, state)
+            os.makedirs(states_dir, exist_ok=True)
 
             fig, ax = plt.subplots(figsize=(15, 10))
 
@@ -648,13 +681,13 @@ class GeospatialDataGenerator:
             # Save plot
             plt.savefig(
                 os.path.join(
-                    self.DATA_DIR, f"geospatial_{self.region}_{self.data_type}_plot.png"
+                    states_dir, f"geospatial_{self.region}_{self.data_type}_plot.png"
                 )
             )
             plt.close()
 
             logger.info(
-                f"Plot saved as 'geospatial_{self.region}_{self.data_type}_plot.png'"
+                f"Plot saved as '{states_dir}/geospatial_{self.region}_{self.data_type}_plot.png'"
             )
             return True
 
@@ -715,7 +748,16 @@ class GeospatialDataGenerator:
             )
 
             # Save the plot
-            plt.savefig(os.path.join(self.DATA_DIR, f"{self.region}_boundary.png"))
+            # Create base directory structure
+            state = (
+                self._region_queries[self.region]["state"].lower().replace(" ", "_")
+            )
+
+            plots_dir = os.path.join(self.DATA_DIR, "plots")
+            os.makedirs(plots_dir, exist_ok=True)
+            states_dir = os.path.join(plots_dir, state)
+            os.makedirs(states_dir, exist_ok=True)
+            plt.savefig(os.path.join(states_dir, f"{self.region}_boundary.png"))
             plt.close()
 
             logger.info(f"Boundary plot saved as '{self.region}_boundary.png'")
@@ -734,16 +776,26 @@ class GeospatialDataGenerator:
             if self.data.crs is None:
                 self.data = self._ensure_crs(self.data)
 
+            state = (
+                self._region_queries[self.region]["state"].lower().replace(" ", "_")
+            )
+
+            # Create base directory structure
+            data_type_dir = os.path.join(self.DATA_DIR, self.data_type)
+            os.makedirs(data_type_dir, exist_ok=True)
+
+            states_dir = os.path.join(data_type_dir, state)
+            os.makedirs(states_dir, exist_ok=True)
+
             filename = (
                 f"{self.data_type}_{self.region}_{datetime.now().strftime('%Y%m%d')}"
             )
-            os.makedirs(self.DATA_DIR, exist_ok=True)
 
             if format == "geojson":
-                filepath = os.path.join(self.DATA_DIR, f"{filename}.geojson")
+                filepath = os.path.join(states_dir, f"{filename}.geojson")
                 self.data.to_file(filepath, driver="GeoJSON")
             elif format == "shapefile":
-                filepath = os.path.join(self.DATA_DIR, f"{filename}.shp")
+                filepath = os.path.join(states_dir, f"{filename}.shp")
                 self.data.to_file(filepath)
             else:
                 raise ValueError(f"Unsupported format: {format}")
@@ -772,9 +824,8 @@ class GeospatialDataGenerator:
                     self.boundary.geometry.iloc[0],
                     network_type="drive",
                     simplify=True,
-                    retain_all=False,
+                    retain_all=True,
                     truncate_by_edge=True,
-                    clean_periphery=True,
                 )
 
                 # Force the graph to use EPSG:4326
@@ -847,31 +898,44 @@ class GeospatialDataGenerator:
 
 
 def main():
+    """Generate all available data types for a specified region"""
     region = "oklahoma_city"
+    data_configs = {
+        "pois": {"num_points": 1000, "format": "geojson"},
+        "routes": {"num_points": 100, "format": "geojson"},
+        "polygons": {"num_points": 50, "format": "shapefile"},
+    }
 
-    # Generate point data
-    point_generator = GeospatialDataGenerator(
-        data_type="points", region=region, num_points=1000
-    )
-    point_generator.generate_data()
-    point_generator.plot_data()
-    point_generator.save_data(format="geojson")
+    logger.info(f"Starting data generation for {region}")
+    logger.info(f"Data types to generate: {list(data_configs.keys())}")
 
-    # Generate route data
-    route_generator = GeospatialDataGenerator(
-        data_type="routes", region=region, num_points=100
-    )
-    route_generator.generate_data()
-    route_generator.plot_data()
-    route_generator.save_data(format="geojson")
+    # Create a single generator instance to reuse cached data
+    generator = GeospatialDataGenerator(region=region)
 
-    # Generate polygon data
-    polygon_generator = GeospatialDataGenerator(
-        data_type="polygons", region=region, num_points=100
-    )
-    polygon_generator.generate_data()
-    polygon_generator.plot_data()
-    polygon_generator.save_data(format="shapefile")
+    # Process each data type
+    for data_type, config in data_configs.items():
+        process_data_type(generator, data_type, config)
+
+    logger.info("\nData generation complete")
+
+
+def process_data_type(generator, data_type, config):
+    """Process a single data type"""
+    logger.info(f"\nProcessing {data_type} data...")
+
+    try:
+        generator.data_type = data_type
+        generator.num_points = config["num_points"]
+
+        # Generate, plot, and save data
+        generator.generate_data()
+        generator.plot_data()
+        generator.save_data(format=config["format"])
+
+        logger.info(f"Successfully processed {data_type} data")
+
+    except Exception as e:
+        logger.error(f"Error processing {data_type} data: {str(e)}")
 
 
 if __name__ == "__main__":
