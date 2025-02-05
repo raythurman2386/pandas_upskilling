@@ -88,14 +88,14 @@ def compute_class_weights(y):
 
 def make_unique_name(name, used_names):
     # Clean the name first
-    clean_name = name.replace(':', '_').replace('-', '_')
-    clean_name = ''.join(c for c in clean_name if c.isalnum() or c == '_')
+    clean_name = name.replace(":", "_").replace("-", "_")
+    clean_name = "".join(c for c in clean_name if c.isalnum() or c == "_")
     base_name = clean_name[:8]  # Leave room for numbers
-    
+
     if base_name not in used_names:
         used_names.add(base_name)
         return base_name
-    
+
     # If name is already used, add a number
     counter = 1
     while True:
