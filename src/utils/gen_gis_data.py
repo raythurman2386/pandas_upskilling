@@ -127,7 +127,61 @@ class GeospatialDataGenerator:
         "buffalo": {"city": "Buffalo", "state": "New York", "country": "USA"},
         "richmond": {"city": "Richmond", "state": "Virginia", "country": "USA"},
         "grand_rapids": {"city": "Grand Rapids", "state": "Michigan", "country": "USA"},
+        # Additional Major Metropolitan Areas
+        "san_jose": {"city": "San Jose", "state": "California", "country": "USA"},
+        "fort_worth": {"city": "Fort Worth", "state": "Texas", "country": "USA"},
+        "jacksonville": {"city": "Jacksonville", "state": "Florida", "country": "USA"},
+        "columbus_oh": {"city": "Columbus", "state": "Ohio", "country": "USA"},
+        "el_paso": {"city": "El Paso", "state": "Texas", "country": "USA"},
+        "seattle_tacoma": {"city": "Tacoma", "state": "Washington", "country": "USA"},
+        "denver_boulder": {"city": "Boulder", "state": "Colorado", "country": "USA"},
+        "nashville_davidson": {"city": "Davidson", "state": "Tennessee", "country": "USA"},
+
+        # Tech Hubs
+        "austin_round_rock": {"city": "Round Rock", "state": "Texas", "country": "USA"},
+        "raleigh_durham": {"city": "Durham", "state": "North Carolina", "country": "USA"},
+        "portland_vancouver": {"city": "Vancouver", "state": "Washington", "country": "USA"},
+
+        # College Towns
+        "ann_arbor": {"city": "Ann Arbor", "state": "Michigan", "country": "USA"},
+        "berkeley": {"city": "Berkeley", "state": "California", "country": "USA"},
+        "cambridge": {"city": "Cambridge", "state": "Massachusetts", "country": "USA"},
+        "chapel_hill": {"city": "Chapel Hill", "state": "North Carolina", "country": "USA"},
+
+        # State Capitals not already included
+        "montgomery": {"city": "Montgomery", "state": "Alabama", "country": "USA"},
+        "juneau": {"city": "Juneau", "state": "Alaska", "country": "USA"},
+        "dover": {"city": "Dover", "state": "Delaware", "country": "USA"},
+        "tallahassee": {"city": "Tallahassee", "state": "Florida", "country": "USA"},
+        "springfield": {"city": "Springfield", "state": "Illinois", "country": "USA"},
+        "baton_rouge": {"city": "Baton Rouge", "state": "Louisiana", "country": "USA"},
+        "augusta": {"city": "Augusta", "state": "Maine", "country": "USA"},
+        "annapolis": {"city": "Annapolis", "state": "Maryland", "country": "USA"},
+        "lansing": {"city": "Lansing", "state": "Michigan", "country": "USA"},
+        "jefferson_city": {"city": "Jefferson City", "state": "Missouri", "country": "USA"},
+        "carson_city": {"city": "Carson City", "state": "Nevada", "country": "USA"},
+        "concord": {"city": "Concord", "state": "New Hampshire", "country": "USA"},
+        "trenton": {"city": "Trenton", "state": "New Jersey", "country": "USA"},
+        "albany": {"city": "Albany", "state": "New York", "country": "USA"},
+        "harrisburg": {"city": "Harrisburg", "state": "Pennsylvania", "country": "USA"},
+        "columbia": {"city": "Columbia", "state": "South Carolina", "country": "USA"},
+        "pierre": {"city": "Pierre", "state": "South Dakota", "country": "USA"},
+        "montpelier": {"city": "Montpelier", "state": "Vermont", "country": "USA"},
+        "olympia": {"city": "Olympia", "state": "Washington", "country": "USA"},
+        "madison": {"city": "Madison", "state": "Wisconsin", "country": "USA"},
     }
+    _states = [
+        "Alabama", "Alaska", "Arizona", "Arkansas", "California", "Colorado",
+        "Connecticut", "Delaware", "Florida", "Georgia", "Hawaii", "Idaho",
+        "Illinois", "Indiana", "Iowa", "Kansas", "Kentucky", "Louisiana",
+        "Maine", "Maryland", "Massachusetts", "Michigan", "Minnesota",
+        "Mississippi", "Missouri", "Montana", "Nebraska", "Nevada",
+        "New Hampshire", "New Jersey", "New Mexico", "New York",
+        "North Carolina", "North Dakota", "Ohio", "Oklahoma", "Oregon",
+        "Pennsylvania", "Rhode Island", "South Carolina", "South Dakota",
+        "Tennessee", "Texas", "Utah", "Vermont", "Virginia", "Washington",
+        "West Virginia", "Wisconsin", "Wyoming"
+    ]
 
     def __init__(self, data_type="points", region="seattle", num_points=1000):
         self.data_type = data_type
