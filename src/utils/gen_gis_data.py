@@ -8,11 +8,12 @@ from datetime import datetime, timedelta
 import os
 import matplotlib.pyplot as plt
 from src.utils.logger import setup_logger
+from src.utils.utils import make_unique_name
 
 logger = setup_logger(__name__)
 
 
-class FakeGeospatialDataGenerator:
+class GeospatialDataGenerator:
     _boundary_cache = {}
     _graph_cache = {}
     _region_queries = {
@@ -249,28 +250,102 @@ class FakeGeospatialDataGenerator:
             return False
 
     def generate_random_points(self):
-        """Generate random points within boundary"""
+        """Generate points using real Points of Interest (POIs) from OpenStreetMap"""
         try:
-            minx, miny, maxx, maxy = self.boundary.total_bounds
-
-            # Generate more points than needed to account for points outside boundary
-            factor = 1.5
+            logger.info(f"Fetching points of interest for {self.region} from OpenStreetMap...")
+            
+            # Define tags for different types of POIs
+            tags = {
+                'amenity': [
+                    'restaurant', 'cafe', 'school', 'university', 'hospital',
+                    'library', 'police', 'fire_station', 'bank', 'pharmacy'
+                ],
+                'shop': True,  # Get all types of shops
+                'tourism': [
+                    'hotel', 'museum', 'attraction', 'viewpoint'
+                ],
+                'leisure': [
+                    'park', 'sports_centre', 'stadium', 'playground'
+                ]
+            }
+            
+            # Fetch POIs from OSM within our boundary
+            gdf = ox.features_from_polygon(
+                self.boundary.geometry.iloc[0],
+                tags=tags
+            )
+            
+            if gdf.empty:
+                raise ValueError(f"No points of interest found for {self.region}")
+            
+            # Extract points from the data
             points = []
-            while len(points) < self.num_points:
-                # Generate random points
-                x = np.random.uniform(minx, maxx, int(self.num_points * factor))
-                y = np.random.uniform(miny, maxy, int(self.num_points * factor))
-
-                # Create Points and check if they're within boundary
-                for i in range(len(x)):
-                    point = Point(x[i], y[i])
+            point_data = []
+            
+            for idx, row in gdf.iterrows():
+                try:
+                    # Get the point geometry (centroid for non-point geometries)
+                    if row.geometry is None:
+                        continue
+                    
+                    if row.geometry.geom_type == 'Point':
+                        point = row.geometry
+                    else:
+                        point = row.geometry.centroid
+                    
+                    # Ensure the point is within our boundary
                     if self.boundary.geometry.iloc[0].contains(point):
                         points.append(point)
+                        
+                        # Determine the type of POI
+                        poi_type = None
+                        if 'amenity' in row and row['amenity']:
+                            poi_type = str(row['amenity'])
+                        elif 'shop' in row and row['shop']:
+                            poi_type = f"shop_{str(row['shop'])}"
+                        elif 'tourism' in row and row['tourism']:
+                            poi_type = f"tourism_{str(row['tourism'])}"
+                        elif 'leisure' in row and row['leisure']:
+                            poi_type = f"leisure_{str(row['leisure'])}"
+                        else:
+                            poi_type = 'other'
+                        
+                        # Get the name if available
+                        name = row.get('name', f"{poi_type}_{len(points)}")
+                        
+                        point_data.append({
+                            'point_id': len(points) - 1,
+                            'type': poi_type[:10],
+                            'name': str(name)[:20],
+                            'timestamp': datetime.now() + timedelta(minutes=len(points))
+                        })
+                        
                         if len(points) >= self.num_points:
                             break
+                            
+                except Exception as e:
+                    logger.warning(f"Error processing POI: {str(e)}")
+                    continue
+            
+            if not points:
+                raise ValueError("No valid points were found")
+            
+            # If we have more points than requested, sample them
+            if len(points) > self.num_points:
+                indices = np.random.choice(len(points), self.num_points, replace=False)
+                points = [points[i] for i in indices]
+                point_data = [point_data[i] for i in indices]
+            
+            # Create GeoDataFrame
+            points_gdf = gpd.GeoDataFrame(
+                point_data,
+                geometry=points,
+                crs="EPSG:4326"
+            )
 
-            return gpd.GeoDataFrame(geometry=points[: self.num_points], crs="EPSG:4326")
-
+            logger.info(f"Successfully generated {len(points_gdf)} points from OSM data")
+            return points_gdf
+            
         except Exception as e:
             logger.error(f"Error generating points: {str(e)}")
             raise
@@ -332,89 +407,99 @@ class FakeGeospatialDataGenerator:
             raise
 
     def generate_polygons(self):
-        """Generate fake polygon data (e.g., service areas, zones) without overlaps"""
+        """Generate polygon data using real OpenStreetMap features like administrative boundaries,
+        land use areas, and neighborhoods within the region."""
         try:
-            # Generate center points for polygons with minimum distance constraint
-            points = self.generate_random_points()
-            points_gdf = self._ensure_crs(points)
-
-            polygons = []
-            polygon_data = []
-
-            # Create a list to store polygon bounds for overlap checking
-            existing_polygons = []
-
-            for idx, point in enumerate(points_gdf.geometry):
-                attempts = 0
-                max_attempts = 10
-                buffer_distance = 0.002
-
-                while attempts < max_attempts:
-                    # Create random polygon around point
-                    num_points = np.random.randint(6, 10)
-                    angles = np.linspace(0, 360, num_points)
-                    base_distance = np.random.uniform(0.001, 0.003)
-                    distances = base_distance + np.random.uniform(-0.0005, 0.0005, len(angles))
-
-                    polygon_points = []
-                    for angle, distance in zip(angles, distances):
-                        dx = distance * np.cos(np.radians(angle))
-                        dy = distance * np.sin(np.radians(angle))
-                        polygon_points.append((point.x + dx, point.y + dy))
-
-                    # Close the polygon
-                    polygon_points.append(polygon_points[0])
-
-                    # Create and validate polygon
-                    polygon = Polygon(polygon_points)
-                    if not polygon.is_valid:
-                        attempts += 1
-                        continue
-
-                    # Buffer slightly to ensure no edges touch
-                    buffered = polygon.buffer(0.0001)
-
-                    # Check if within boundary
-                    if not self.boundary.geometry.iloc[0].contains(buffered):
-                        attempts += 1
-                        continue
-
-                    # Check for overlaps with existing polygons
-                    overlapping = False
-                    for existing_poly in existing_polygons:
-                        if buffered.intersects(existing_poly):
-                            overlapping = True
-                            break
-
-                    if not overlapping:
-                        polygons.append(polygon)
-                        existing_polygons.append(buffered)
-                        polygon_data.append({
-                            'zone_id': len(polygons)-1,
-                            'area': polygon.area * (111000 ** 2),
-                            'category': np.random.choice(['residential', 'commercial', 'industrial']),
-                            'population': np.random.randint(100, 10000),
-                            'density': np.random.uniform(1000, 5000)
-                        })
-                        break
-
-                    attempts += 1
-
-                if attempts == max_attempts:
-                    logger.warning(f"Could not create non-overlapping polygon for point {idx}")
-
-            if not polygons:
-                raise ValueError("No valid polygons were generated")
-
-            # Create GeoDataFrame with polygons
-            polygons_gdf = gpd.GeoDataFrame(
-                polygon_data,
-                geometry=polygons,
+            logger.info(f"Fetching real polygon data for {self.region} from OpenStreetMap...")
+            
+            # Tags to fetch from OSM - we'll get administrative boundaries, land use, and leisure areas
+            tags = {
+                'boundary': ['administrative', 'postal'],
+                'landuse': True,  # Get all land use types
+                'leisure': True,  # Get all leisure areas
+                'amenity': ['school', 'university', 'hospital', 'park']
+            }
+            
+            # Fetch features from OSM within our boundary
+            gdf = ox.features_from_polygon(
+                self.boundary.geometry.iloc[0],
+                tags=tags
             )
-            polygons_gdf = self._ensure_crs(polygons_gdf)
-
-            logger.info(f"Successfully generated {len(polygons_gdf)} non-overlapping polygons")
-            return polygons_gdf
+            
+            if gdf.empty:
+                raise ValueError(f"No polygon features found for {self.region}")
+            
+            # Clean and prepare the data
+            gdf = gdf[gdf.geometry.type.isin(['Polygon', 'MultiPolygon'])]
+            gdf = gdf.reset_index(drop=True)
+            
+            # If we have more polygons than requested, sample them
+            if len(gdf) > self.num_points:
+                gdf = gdf.sample(n=self.num_points, random_state=42)
+            
+            # Clean up column names for shapefile compatibility
+            # Remove special characters and limit length while ensuring uniqueness
+            used_names = set()
+            rename_dict = {}
+            
+            # Create rename dictionary ensuring unique names
+            for col in gdf.columns:
+                if isinstance(col, str):
+                    new_col = make_unique_name(col, used_names)
+                    rename_dict[col] = new_col
+            
+            # Rename columns
+            gdf = gdf.rename(columns=rename_dict)
+            
+            # Ensure proper CRS and calculate accurate areas
+            gdf = self._ensure_crs(gdf)
+            # Project to a local UTM zone for accurate area calculation
+            utm_zone = int((gdf.total_bounds[0] + 180) // 6 + 1)
+            utm_crs = f"EPSG:326{utm_zone}"  # Northern hemisphere
+            if gdf.total_bounds[1] < 0:  # Southern hemisphere
+                utm_crs = f"EPSG:327{utm_zone}"
+            
+            # Calculate area in square Kilometers using projected CRS
+            gdf_utm = gdf.to_crs(utm_crs)
+            # Convert from square meters to square kilometers and round to 2 decimal places
+            gdf['area'] = (gdf_utm.geometry.area / 1000000).round(2)  # Area in square kilometers
+            
+            # Add useful attributes with guaranteed unique names
+            gdf['zone_id'] = range(len(gdf))
+            
+            # Determine category based on OSM tags
+            def get_category(row):
+                if 'boundary' in row and row['boundary'] in ['administrative', 'postal']:
+                    return 'admin'
+                elif 'landuse' in row:
+                    return str(row['landuse'])[:8]
+                elif 'leisure' in row:
+                    return str(row['leisure'])[:8]
+                elif 'amenity' in row:
+                    return str(row['amenity'])[:8]
+                else:
+                    return 'other'
+            
+            gdf['category'] = gdf.apply(get_category, axis=1)
+            
+            # Add population density (estimated based on area)
+            # Larger areas tend to have lower density
+            gdf['density'] = (5000 * (1 / np.sqrt(gdf['area']))).round(0)  # people per sq km
+            gdf['density'] = gdf['density'].clip(100, 10000)  # reasonable range
+            
+            # Calculate estimated population based on area and density
+            gdf['population'] = (gdf['area'] * gdf['density']).astype(int)
+            
+            # Keep only essential columns with guaranteed unique names
+            essential_cols = ['geometry', 'zone_id', 'area', 'category', 'density', 'population']
+            gdf = gdf[essential_cols]
+            
+            # Verify no duplicate columns
+            if len(gdf.columns) != len(set(gdf.columns)):
+                raise ValueError("Duplicate column names detected")
+            
+            logger.info(f"Successfully generated {len(gdf)} real polygons from OSM data")
+            return gdf
 
         except Exception as e:
             logger.error(f"Error generating polygons: {str(e)}")
@@ -423,16 +508,11 @@ class FakeGeospatialDataGenerator:
     def generate_data(self):
         """Generate fake geospatial data based on type"""
         try:
+            # Check if the cache needs cleared
+            self.clear_cache(max_cache_size=50)
+
             if self.data_type == "points":
-                points_gdf = self.generate_random_points()
-                # Add additional point attributes
-                points_gdf["point_id"] = range(len(points_gdf))
-                points_gdf["timestamp"] = [
-                    datetime.now() + timedelta(minutes=i)
-                    for i in range(len(points_gdf))
-                ]
-                points_gdf["value"] = np.random.normal(50, 10, len(points_gdf))
-                self.data = points_gdf
+                self.data = self.generate_random_points()
 
             elif self.data_type == "routes":
                 self.data = self.generate_routes()
@@ -672,18 +752,30 @@ class FakeGeospatialDataGenerator:
                 raise ValueError(f"Could not ensure CRS: {str(e)}")
 
     @classmethod
-    def clear_cache(cls):
-        """Clear the cached boundary and graph data"""
-        cls._boundary_cache.clear()
-        cls._graph_cache.clear()
-        logger.info("Cache cleared")
+    def clear_cache(cls, max_cache_size=50):
+        """Clear the cached boundary and graph data when size exceeds limit"""
+        try:
+            total_cache_size = len(cls._boundary_cache) + len(cls._graph_cache)
+
+            if total_cache_size > max_cache_size:
+                cls._boundary_cache.clear()
+                cls._graph_cache.clear()
+                logger.info(f"Cache cleared - exceeded max size of {max_cache_size} items")
+                return True
+
+            logger.debug(f"Cache size ({total_cache_size}) within limits ({max_cache_size})")
+            return False
+
+        except Exception as e:
+            logger.error(f"Error clearing cache: {str(e)}")
+            return False
 
 
 def main():
-    region = "portland"
+    region = "oklahoma_city"
 
     # Generate point data
-    point_generator = FakeGeospatialDataGenerator(
+    point_generator = GeospatialDataGenerator(
         data_type="points", region=region, num_points=1000
     )
     point_generator.generate_data()
@@ -691,7 +783,7 @@ def main():
     point_generator.save_data(format="geojson")
 
     # Generate route data
-    route_generator = FakeGeospatialDataGenerator(
+    route_generator = GeospatialDataGenerator(
         data_type="routes", region=region, num_points=100
     )
     route_generator.generate_data()
@@ -699,15 +791,12 @@ def main():
     route_generator.save_data(format="geojson")
 
     # Generate polygon data
-    polygon_generator = FakeGeospatialDataGenerator(
-        data_type="polygons", region=region, num_points=50
+    polygon_generator = GeospatialDataGenerator(
+        data_type="polygons", region=region, num_points=100
     )
     polygon_generator.generate_data()
     polygon_generator.plot_data()
     polygon_generator.save_data(format="shapefile")
-
-    # Clear cache
-    FakeGeospatialDataGenerator.clear_cache()
 
 
 if __name__ == "__main__":
