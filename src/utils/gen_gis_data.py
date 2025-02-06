@@ -42,7 +42,6 @@ class GeospatialDataGenerator:
         "minneapolis": {"city": "Minneapolis", "state": "Minnesota", "country": "USA"},
         "milwaukee": {"city": "Milwaukee", "state": "Wisconsin", "country": "USA"},
         "indianapolis": {"city": "Indianapolis", "state": "Indiana", "country": "USA"},
-        "columbus": {"city": "Columbus", "state": "Ohio", "country": "USA"},
         "kansas_city": {"city": "Kansas City", "state": "Missouri", "country": "USA"},
         "omaha": {"city": "Omaha", "state": "Nebraska", "country": "USA"},
         "des_moines": {"city": "Des Moines", "state": "Iowa", "country": "USA"},
@@ -127,6 +126,9 @@ class GeospatialDataGenerator:
         "buffalo": {"city": "Buffalo", "state": "New York", "country": "USA"},
         "richmond": {"city": "Richmond", "state": "Virginia", "country": "USA"},
         "grand_rapids": {"city": "Grand Rapids", "state": "Michigan", "country": "USA"},
+        "corydon": {"city": "Corydon", "state": "Indiana", "country": "USA"},
+        "antlers": {"city": "Antlers", "state": "Oklahoma", "country": "USA"},
+        "hugo": {"city": "Hugo", "state": "Oklahoma", "country": "USA"},
         # Additional Major Metropolitan Areas
         "san_jose": {"city": "San Jose", "state": "California", "country": "USA"},
         "fort_worth": {"city": "Fort Worth", "state": "Texas", "country": "USA"},
@@ -262,8 +264,20 @@ class GeospatialDataGenerator:
                 truncate_by_edge=True,
             )
 
-            # Add routing attributes
-            self.graph = ox.add_edge_speeds(self.graph)
+            # Define default speeds for different highway types (in km/h)
+            hwy_speeds = {
+                'motorway': 100,
+                'trunk': 85,
+                'primary': 65,
+                'secondary': 55,
+                'tertiary': 45,
+                'residential': 35,
+                'service': 25,
+                'unclassified': 40
+            }
+
+            # Add routing attributes with fallback speeds
+            self.graph = ox.add_edge_speeds(self.graph, hwy_speeds=hwy_speeds, fallback=40)
             self.graph = ox.add_edge_travel_times(self.graph)
             state = (
                 self._region_queries[self.region]["state"].lower().replace(" ", "_")
@@ -277,8 +291,8 @@ class GeospatialDataGenerator:
             os.makedirs(states_dir, exist_ok=True)
 
             filename = (
-                    f"street_network_{self.region}_{datetime.now().strftime('%Y%m%d')}"
-                )
+                f"street_network_{self.region}_{datetime.now().strftime('%Y%m%d')}"
+            )
             filepath = os.path.join(states_dir, f"{filename}.gpkg")
             ox.io.save_graph_geopackage(self.graph, filepath=filepath)
             logger.info(f"Street network saved to {filepath}")
@@ -428,7 +442,7 @@ class GeospatialDataGenerator:
                                 "type": poi_type[:10],
                                 "name": str(name)[:20],
                                 "timestamp": datetime.now()
-                                + timedelta(minutes=len(points)),
+                                             + timedelta(minutes=len(points)),
                             }
                         )
 
@@ -502,12 +516,12 @@ class GeospatialDataGenerator:
                             "route_id": i,
                             "distance": route_length,
                             "duration": route_length
-                            / 1609.34
-                            / np.random.uniform(20, 40)
-                            * 60,
+                                        / 1609.34
+                                        / np.random.uniform(20, 40)
+                                        * 60,
                             "vehicle_type": np.random.choice(["car", "truck", "bike"]),
                             "start_time": datetime.now()
-                            + timedelta(minutes=np.random.randint(0, 1440)),
+                                          + timedelta(minutes=np.random.randint(0, 1440)),
                             "num_stops": len(route_nodes) - 1,
                         }
                     )
@@ -799,7 +813,7 @@ class GeospatialDataGenerator:
                 f"{scale_length*111:.1f} km",
                 ha="center",
                 va="top",
-            )
+                )
 
             # Save the plot
             # Create base directory structure
@@ -951,9 +965,9 @@ class GeospatialDataGenerator:
             return False
 
 
-def main():
+def main(region="oklahoma_city"):
     """Generate all available data types for a specified region"""
-    region = "oklahoma_city"
+    region = region
     data_configs = {
         "pois": {"num_points": 1000, "format": "geojson"},
         "routes": {"num_points": 100, "format": "geojson"},
